@@ -1,0 +1,13 @@
+# local instance: database, uploads, backups, logs (never commit)
+pb_data/
+*.log
+
+# build outputs (published as release assets, not in git)
+/pocketbaseplus
+/pocketbaseplus.exe
+/dist/
+
+# local environment
+.env
+.env.*
+.DS_Store

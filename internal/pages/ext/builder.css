@@ -1,0 +1,527 @@
+/* Pages builder: full height editor below the page header. */
+
+.gpp-builder-page .gpp-builder {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+.gpp-builder .page-header {
+    flex-shrink: 0;
+}
+.gpp-builder .page-header-primary-btns {
+    align-items: center;
+    flex-wrap: wrap;
+}
+.gpp-status {
+    text-decoration: none;
+}
+.gpp-editor-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    border-top: 1px solid var(--borderColor);
+}
+.gpp-editor {
+    position: absolute;
+    inset: 0;
+}
+
+/* editor theme: neutral dark panels, the dashboard accent for the active items */
+.gpp-editor {
+    --gjs-primary-color: #2b2d31;
+    --gjs-secondary-color: #d4d6db;
+    --gjs-tertiary-color: #3b82f6;
+    --gjs-quaternary-color: #7cb3ff;
+    --gjs-font-color: #d4d6db;
+    font-family: inherit;
+}
+.gpp-editor .gjs-pn-btn {
+    font-size: 17px;
+    line-height: 21px;
+}
+/* blocks: a compact list (icon + name) instead of tiles */
+.gpp-editor .gjs-blocks-c {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    padding: 4px;
+}
+.gpp-editor .gjs-block:not(.gjs-bdrag) {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 4px;
+    box-shadow: none;
+    text-align: left;
+}
+.gpp-editor .gjs-block:not(.gjs-bdrag):hover {
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: none;
+}
+.gpp-editor .gjs-block__media {
+    flex-shrink: 0;
+    width: 18px;
+    margin: 0;
+    text-align: center;
+}
+.gpp-block-icon {
+    display: block;
+    font-size: 17px;
+    line-height: 1;
+}
+.gpp-editor .gjs-block-label {
+    font-family: inherit;
+    font-size: 13px;
+    white-space: nowrap;
+}
+.gpp-editor .gjs-block-category .gjs-title {
+    padding: 7px 10px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+.gpp-editor .gjs-block[hidden],
+.gpp-editor .gjs-block-category[hidden] {
+    display: none;
+}
+/* searching: every category open (over GrapesJS's inline display) */
+.gpp-editor .gpp-searching .gjs-blocks-c {
+    display: flex !important;
+}
+.gpp-editor .gpp-searching .gjs-caret-icon {
+    visibility: hidden;
+}
+
+/* blocks search */
+.gpp-block-search {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--gjs-primary-color);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+}
+.gpp-block-search i {
+    opacity: 0.6;
+}
+.gpp-block-search input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--gjs-font-color);
+    font: inherit;
+    font-size: 13px;
+    color-scheme: dark;
+    outline: 0;
+}
+.gpp-block-search input:focus {
+    border-color: var(--gjs-quaternary-color);
+}
+.gpp-block-search input::placeholder {
+    color: rgba(212, 214, 219, 0.55);
+}
+.gpp-block-search-empty {
+    margin: 0;
+    padding: 14px 12px;
+    font-size: 13px;
+    opacity: 0.7;
+}
+
+/* native dropdowns: the editor panels are always dark (readable lists in the
+   dashboard's light and dark modes) */
+.gpp-editor select {
+    color-scheme: dark;
+}
+.gpp-editor select option {
+    background-color: #2b2d31;
+    color: #d4d6db;
+}
+
+/* icon picker of buttons and badges */
+.gpp-icon-picker {
+    width: 100%;
+}
+.gpp-icon-current {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 5px 6px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.gpp-icon-current span {
+    flex: 1;
+}
+.gpp-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+    gap: 4px;
+    padding: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 3px;
+}
+.gpp-icon-grid[hidden] {
+    display: none;
+}
+.gpp-icon-grid button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 30px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: none;
+    color: inherit;
+    font-size: 16px;
+    cursor: pointer;
+}
+.gpp-icon-grid button:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+.gpp-icon-grid button.active {
+    border-color: var(--gjs-quaternary-color);
+    color: var(--gjs-quaternary-color);
+}
+
+/* History */
+.gpp-history {
+    display: flex;
+    flex-direction: column;
+}
+.gpp-history-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--surfaceAlt2Color);
+}
+.gpp-history-row:last-child {
+    border-bottom: 0;
+}
+.gpp-history-info {
+    flex: 1;
+    min-width: 0;
+}
+.gpp-history-info .label {
+    margin-left: 6px;
+}
+
+/* Pages → Theme */
+.gpp-theme {
+    display: grid;
+    grid-template-columns: minmax(260px, 340px) 1fr;
+    gap: var(--baseSpacing, 20px);
+    align-items: start;
+}
+@media (max-width: 900px) {
+    .gpp-theme {
+        grid-template-columns: 1fr;
+    }
+}
+.gpp-theme-preview {
+    width: 100%;
+    height: 78vh;
+    border: 1px solid var(--borderColor);
+    border-radius: var(--borderRadius);
+    background: #fff;
+}
+.gpp-theme-switch {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.gpp-color {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 2px;
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+
+/* members: "View as" switch, banner, "Visible to" setting */
+.gpp-editor-col {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+}
+.gpp-editor-col .gpp-editor {
+    position: relative;
+    inset: auto;
+    flex: 1;
+    min-height: 0;
+}
+.gpp-viewas {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--surfaceTxtHintColor);
+}
+.gpp-viewas .select {
+    width: 230px;
+    min-height: 32px;
+}
+.gpp-viewas-banner {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 13px;
+}
+html[data-color-scheme="dark"] .gpp-viewas-banner {
+    background: #3a2a06;
+    color: #fcd34d;
+}
+.gpp-visible select {
+    width: 100%;
+}
+.gpp-visible-roles {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 2px 0;
+}
+.gpp-visible-roles label {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    cursor: pointer;
+}
+.gpp-role-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+}
+
+/* record tables: the "Columns" setting */
+.gpp-cols {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    padding: 4px 0;
+}
+.gpp-cols-title {
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+.gpp-cols-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 4px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.04);
+}
+.gpp-cols-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gpp-cols-name small {
+    margin-left: 6px;
+    font-size: 0.85em;
+    opacity: 0.55;
+}
+.gpp-cols-row button {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+}
+.gpp-cols-row button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+}
+.gpp-cols-row button:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+.gpp-cols-add {
+    width: 100%;
+    margin-top: 6px;
+}
+
+/* formulas: the "Formula" setting and editor (formula.js) */
+.gpp-formula-trait {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 0;
+}
+.gpp-formula-code {
+    display: block;
+    padding: 4px 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    max-height: 90px;
+    overflow: auto;
+}
+.gpp-formula-btn {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+}
+.gpp-formula-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+.gpp-formula-modal .modal-content {
+    display: flex;
+    flex-direction: column;
+}
+.gpp-formula-field textarea {
+    width: 100%;
+    min-height: 90px;
+    resize: vertical;
+}
+.gpp-formula-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+    border: 1px solid var(--surfaceAlt2Color);
+}
+.gpp-formula-preview.error {
+    border-color: var(--dangerColor);
+    color: var(--dangerColor);
+}
+.gpp-formula-preview-label {
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.gpp-formula-preview-text {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+.gpp-formula-picker {
+    display: flex;
+    flex-direction: column;
+    height: 300px;
+    min-height: 0;
+    margin-top: 6px;
+}
+.gpp-formula-picker .gp-picker-list {
+    overflow: auto;
+}
+.gpp-formula-modal .modal-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+@media (max-width: 600px) {
+    .gpp-formula-modal .modal-footer > .btn {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    .gpp-formula-modal .modal-footer > .btn.danger {
+        flex-basis: 100%;
+    }
+}
+
+/* chart colors: palette swatches (Theme page, chart settings) */
+.gpp-palettes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 6px;
+}
+.gpp-palette {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    padding: 7px 8px;
+    border: 1px solid var(--borderColor);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    color: var(--surfaceTxtColor);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+.gpp-palette:hover {
+    border-color: var(--surfaceTxtHintColor);
+}
+.gpp-palette.active {
+    border-color: var(--primaryColor);
+    box-shadow: 0 0 0 1px var(--primaryColor);
+}
+.gpp-swatches {
+    display: inline-flex;
+    gap: 3px;
+}
+.gpp-swatches i {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.gpp-custom-colors {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+.gpp-chart-colors {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+.gpp-chart-colors select {
+    width: 100%;
+}
+.gpp-chart-colors .gpp-custom-colors {
+    margin-top: 0;
+}
+.gpp-chart-colors .gpp-custom-colors input {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+.gpp-custom-colors[hidden] {
+    display: none;
+}

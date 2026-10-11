@@ -1,0 +1,28 @@
+# docker compose up -d   →   http://localhost:8090/_/
+# Every setting is optional; see the README, "Docker".
+services:
+  pocketbaseplus:
+    image: ghcr.io/namarusa/pocketbaseplus:latest # or "build: ." to build from the sources
+    ports:
+      - "8090:8090"
+    volumes:
+      - pocketbaseplus_data:/pb_data
+      # or a folder of the host (it must be writable by uid 65532, or set "user:" below):
+      # - ./pb_data:/pb_data
+    # user: "1000:1000"   # run as the owner of a host folder (NAS, bind mounts)
+    environment:
+      TZ: UTC
+      # first superuser, created only when there is none yet (remove them after the first start)
+      POCKETBASEPLUS_ADMIN_EMAIL: admin@example.com
+      POCKETBASEPLUS_ADMIN_PASSWORD: change-me-to-a-long-password
+      # encrypts the stored settings (SMTP password, S3 keys...): 32 characters, keep it safe
+      # POCKETBASEPLUS_ENCRYPTION_KEY: ""
+      # POCKETBASEPLUS_FLOWS_ALLOW_PRIVATE_HTTP: "1"   # flows may call services on your network
+      # POCKETBASEPLUS_OFFLINE: "1"                    # pages load nothing from the internet
+      # POCKETBASEPLUS_MAP_TILES: http://tiles.lan/tile/{z}/{x}/{y}.png
+      # POCKETBASEPLUS_REVISIONS_RETENTION_DAYS: "180"
+      # POCKETBASEPLUS_UNSUBSCRIBE_SECRET: ""
+    restart: unless-stopped
+
+volumes:
+  pocketbaseplus_data:

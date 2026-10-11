@@ -1,0 +1,7 @@
+pb_data
+dist
+pocketbaseplus
+pocketbaseplus.exe
+*.log
+.git
+.github

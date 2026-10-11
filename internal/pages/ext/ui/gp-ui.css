@@ -1,0 +1,616 @@
+/* PocketBasePlus pages: charts and calendars (shadcn/ui look). The colors are the
+   Basecoat theme tokens, with fallbacks for the pages without the UI kit. */
+
+.gp-chart,
+.gp-cal-root {
+    --gp-fg: var(--foreground, #0a0a0a);
+    --gp-bg: var(--background, #fff);
+    --gp-muted: var(--muted, #f5f5f5);
+    --gp-muted-fg: var(--muted-foreground, #737373);
+    --gp-border: var(--border, #e5e5e5);
+    --gp-input: var(--input, #e5e5e5);
+    --gp-ring: var(--ring, #a1a1a1);
+    --gp-primary: var(--primary, #171717);
+    --gp-primary-fg: var(--primary-foreground, #fafafa);
+    --gp-accent: var(--accent, #f5f5f5);
+    --gp-accent-fg: var(--accent-foreground, #171717);
+    --gp-popover: var(--popover, #fff);
+    --gp-popover-fg: var(--popover-foreground, #0a0a0a);
+    --gp-radius: var(--radius, 0.625rem);
+    --gp-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+.gp-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* --- charts -------------------------------------------------------------------------------- */
+
+.gp-chart {
+    --gp-c1: var(--chart-1, #e76e50);
+    --gp-c2: var(--chart-2, #2a9d90);
+    --gp-c3: var(--chart-3, #274754);
+    --gp-c4: var(--chart-4, #e8c468);
+    --gp-c5: var(--chart-5, #f4a462);
+    container-type: inline-size;
+    position: relative;
+    display: block;
+    width: 100%;
+    margin: 0;
+    color: var(--gp-fg);
+    font-size: 12px;
+    line-height: 1.2;
+}
+/* a chart with its own colors */
+.gp-chart.gp-chart-pal {
+    --gp-c1: var(--gp-l1);
+    --gp-c2: var(--gp-l2);
+    --gp-c3: var(--gp-l3);
+    --gp-c4: var(--gp-l4);
+    --gp-c5: var(--gp-l5);
+}
+.dark .gp-chart.gp-chart-pal {
+    --gp-c1: var(--gp-d1);
+    --gp-c2: var(--gp-d2);
+    --gp-c3: var(--gp-d3);
+    --gp-c4: var(--gp-d4);
+    --gp-c5: var(--gp-d5);
+}
+.gp-chart-body {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: var(--gp-chart-h, 260px) auto;
+    column-gap: 8px;
+}
+.gp-chart-y {
+    position: relative;
+    min-width: 2.2em;
+    color: var(--gp-muted-fg);
+    text-align: right;
+}
+.gp-chart-y span {
+    position: absolute;
+    right: 0;
+    transform: translateY(50%);
+    white-space: nowrap;
+}
+.gp-chart-plot {
+    position: relative;
+}
+.gp-chart-grid i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-top: 1px solid var(--gp-border);
+}
+.gp-chart-bars,
+.gp-chart-hits,
+.gp-chart-svg {
+    position: absolute;
+    inset: 0;
+}
+.gp-chart-svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    animation: gp-reveal 0.9s ease-out both;
+}
+.gp-chart-bar {
+    position: absolute;
+    border-radius: var(--chart-bar-radius, 4px) var(--chart-bar-radius, 4px) 0 0;
+    transform-origin: bottom;
+    animation: gp-grow 0.6s ease-out both;
+    transition: opacity 0.15s;
+}
+.gp-chart-bar.gp-neg {
+    border-radius: 0 0 var(--chart-bar-radius, 4px) var(--chart-bar-radius, 4px);
+    transform-origin: top;
+}
+.gp-chart-line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+.gp-chart-hits span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+}
+.gp-chart-x {
+    grid-column: 2;
+    position: relative;
+    height: 2em;
+    color: var(--gp-muted-fg);
+}
+.gp-chart-x span {
+    position: absolute;
+    top: 8px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.gp-chart-x span[data-edge="start"] {
+    transform: none;
+}
+.gp-chart-x span[data-edge="end"] {
+    transform: translateX(-100%);
+}
+/* fewer x labels on narrow charts */
+.gp-chart-x [data-l="3"] {
+    display: none;
+}
+@container (max-width: 719px) {
+    .gp-chart-x [data-l="2"] {
+        display: none;
+    }
+}
+@container (max-width: 479px) {
+    .gp-chart-x [data-l="1"] {
+        display: none;
+    }
+}
+.gp-chart-empty {
+    margin: 0;
+    padding: 3em 0;
+    color: var(--gp-muted-fg);
+    text-align: center;
+}
+
+/* series hidden with the legend */
+.gp-chart [data-s].gp-off {
+    display: none;
+}
+
+/* the hovered column (script) */
+.gp-chart-cursor {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--gp-muted);
+    opacity: 0.6;
+    pointer-events: none;
+}
+.gp-chart-crosshair {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px solid var(--gp-border);
+    pointer-events: none;
+}
+.gp-chart-dot {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border: 2px solid var(--gp-bg);
+    border-radius: 50%;
+    box-sizing: content-box;
+    pointer-events: none;
+}
+
+/* pie and donut */
+.gp-chart-pie-wrap {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    height: var(--gp-chart-h, 260px);
+}
+.gp-chart-pie-svg {
+    height: 100%;
+    aspect-ratio: 1;
+    overflow: visible;
+    animation: gp-pop 0.6s ease-out both;
+}
+.gp-chart-slice {
+    stroke: var(--gp-bg);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    transition: opacity 0.15s;
+}
+.gp-chart-pie-svg:hover .gp-chart-slice:not(:hover) {
+    opacity: 0.6;
+}
+.gp-chart-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+.gp-chart-center strong {
+    font-size: 1.875rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+.gp-chart-center span {
+    color: var(--gp-muted-fg);
+}
+
+/* legend and tooltip: Basecoat's chart styles on the kit pages, these otherwise */
+:where(.gp-chart) .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding-top: 12px;
+}
+:where(.gp-chart) .chart-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--gp-fg);
+    font: inherit;
+    cursor: pointer;
+}
+:where(.gp-chart) .chart-legend-item[aria-pressed="false"] {
+    color: var(--gp-muted-fg);
+    opacity: 0.7;
+}
+:where(.gp-chart) .chart-legend-indicator,
+:where(.gp-chart) .chart-tooltip-indicator {
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: 2px;
+    background-color: var(--chart-indicator-color);
+}
+:where(.gp-chart) .chart-tooltip {
+    position: absolute;
+    z-index: 50;
+    display: grid;
+    gap: 6px;
+    min-width: 8rem;
+    padding: 6px 10px;
+    border: 1px solid var(--gp-border);
+    border-radius: calc(var(--gp-radius) - 2px);
+    background: var(--gp-bg);
+    color: var(--gp-fg);
+    box-shadow: var(--gp-shadow);
+    pointer-events: none;
+}
+.gp-chart .chart-tooltip {
+    translate: none;
+    transition: left 0.1s, top 0.1s;
+}
+.gp-chart .chart-tooltip[hidden] {
+    display: none;
+}
+:where(.gp-chart) .chart-tooltip-title {
+    font-weight: 500;
+}
+:where(.gp-chart) .chart-tooltip-items {
+    display: grid;
+    gap: 6px;
+}
+:where(.gp-chart) .chart-tooltip-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+:where(.gp-chart) .chart-tooltip-label {
+    color: var(--gp-muted-fg);
+}
+:where(.gp-chart) .chart-tooltip-value {
+    margin-left: auto;
+    padding-left: 8px;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes gp-grow {
+    from {
+        transform: scaleY(0);
+    }
+}
+@keyframes gp-reveal {
+    from {
+        clip-path: inset(0 100% 0 0);
+    }
+    to {
+        clip-path: inset(0 0 0 0);
+    }
+}
+@keyframes gp-pop {
+    from {
+        opacity: 0;
+        transform: scale(0.92);
+    }
+}
+
+/* --- calendar ------------------------------------------------------------------------------ */
+
+.gp-cal-root {
+    --gp-cell: 2rem;
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    color: var(--gp-fg);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    vertical-align: top;
+}
+.gp-cal-fallback {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.gp-cal-ready > .gp-cal-fallback {
+    display: none;
+}
+.gp-cal {
+    position: relative;
+    width: fit-content;
+    padding: 0.75rem;
+    border-radius: var(--gp-radius);
+    background: var(--gp-bg);
+}
+.gp-calendar .gp-cal {
+    border: 1px solid var(--gp-border);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.gp-cal-months {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+.gp-cal-month {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.gp-cal-caption {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: var(--gp-cell);
+    padding: 0 var(--gp-cell);
+    font-weight: 500;
+    user-select: none;
+}
+.gp-cal-nav,
+.gp-cal-day {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--gp-cell);
+    height: var(--gp-cell);
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--gp-radius) - 2px);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    user-select: none;
+}
+.gp-cal-nav {
+    position: absolute;
+    top: 0.75rem;
+    z-index: 1;
+}
+.gp-cal-prev {
+    left: 0.75rem;
+}
+.gp-cal-next {
+    right: 0.75rem;
+}
+.gp-cal-nav svg {
+    width: 16px;
+    height: 16px;
+}
+.gp-cal-nav:hover,
+.gp-cal-day:hover {
+    background: var(--gp-accent);
+    color: var(--gp-accent-fg);
+}
+.gp-cal-nav:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+.gp-cal-nav:focus-visible,
+.gp-cal-day:focus-visible,
+.gp-dp-trigger:focus-visible,
+.gp-cal-caption select:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--gp-ring) 50%, transparent);
+    position: relative;
+    z-index: 2;
+}
+.gp-cal-grid {
+    border-collapse: separate;
+    border-spacing: 0 0.5rem;
+    margin: -0.5rem 0;
+}
+.gp-cal-grid th {
+    width: var(--gp-cell);
+    padding: 0;
+    color: var(--gp-muted-fg);
+    font-size: 0.8rem;
+    font-weight: 400;
+    text-align: center;
+    user-select: none;
+}
+.gp-cal-grid td {
+    padding: 0;
+    text-align: center;
+}
+.gp-cal-day.gp-today {
+    background: var(--gp-accent);
+    color: var(--gp-accent-fg);
+}
+.gp-cal-day.gp-outside {
+    color: var(--gp-muted-fg);
+}
+.gp-cal-day[aria-disabled="true"] {
+    color: var(--gp-muted-fg);
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+}
+.gp-cal-day[aria-selected="true"] {
+    background: var(--gp-primary);
+    color: var(--gp-primary-fg);
+}
+.gp-cal-day.gp-outside[aria-selected="true"] {
+    opacity: 0.5;
+}
+/* range: the days between the start and the end on an accent band */
+.gp-cal-grid td.gp-in-range {
+    background: var(--gp-accent);
+}
+.gp-cal-grid td.gp-in-range .gp-cal-day:not([aria-selected="true"]) {
+    border-radius: 0;
+    background: transparent;
+    color: var(--gp-accent-fg);
+}
+.gp-cal-grid td.gp-range-start {
+    border-radius: calc(var(--gp-radius) - 2px) 0 0 calc(var(--gp-radius) - 2px);
+}
+.gp-cal-grid td.gp-range-end {
+    border-radius: 0 calc(var(--gp-radius) - 2px) calc(var(--gp-radius) - 2px) 0;
+}
+.gp-cal-grid td.gp-range-start.gp-range-end {
+    border-radius: calc(var(--gp-radius) - 2px);
+}
+.gp-cal-caption select {
+    height: var(--gp-cell);
+    padding: 0 0.5rem;
+    border: 1px solid var(--gp-input);
+    border-radius: calc(var(--gp-radius) - 2px);
+    background: var(--gp-bg);
+    color: inherit;
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+}
+.dark .gp-cal-caption select,
+.dark .gp-cal-time input {
+    color-scheme: dark;
+}
+.gp-cal-caption select option {
+    background: var(--gp-popover);
+    color: var(--gp-popover-fg);
+}
+.gp-cal-time {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--gp-border);
+}
+.gp-cal-time label {
+    font-weight: 500;
+}
+.gp-cal-time input {
+    height: var(--gp-cell);
+    padding: 0 0.5rem;
+    border: 1px solid var(--gp-input);
+    border-radius: calc(var(--gp-radius) - 2px);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+
+/* date picker: a field opening the calendar in a popover */
+.gp-dp-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: 15rem;
+    max-width: 100%;
+    height: 2.25rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--gp-input);
+    border-radius: calc(var(--gp-radius) - 2px);
+    background: var(--gp-bg);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    color: var(--gp-fg);
+    font: inherit;
+    font-weight: 400;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.dark .gp-dp-trigger {
+    background: color-mix(in oklab, var(--gp-input) 30%, transparent);
+}
+.gp-dp-trigger:hover {
+    background: var(--gp-accent);
+    color: var(--gp-accent-fg);
+}
+.gp-dp-trigger[data-empty] {
+    color: var(--gp-muted-fg);
+}
+.gp-dp-trigger svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+.gp-dp-trigger span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gp-datepicker[data-mode="range"] .gp-dp-trigger,
+.gp-datepicker[data-mode="multiple"] .gp-dp-trigger {
+    width: 18.75rem;
+}
+.gp-cal-root[aria-invalid="true"] .gp-dp-trigger,
+.gp-cal-root[aria-invalid="true"] .gp-cal {
+    border-color: var(--destructive, #e7000b);
+}
+.gp-dp-pop {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 50;
+    border: 1px solid var(--gp-border);
+    border-radius: var(--gp-radius);
+    background: var(--gp-popover);
+    color: var(--gp-popover-fg);
+    box-shadow: var(--gp-shadow);
+    animation: gp-pop 0.12s ease-out;
+}
+.gp-dp-pop[hidden] {
+    display: none;
+}
+.gp-dp-pop.gp-up {
+    top: auto;
+    bottom: calc(100% + 4px);
+}
+.gp-dp-pop.gp-end {
+    left: auto;
+    right: 0;
+}
+.gp-dp-pop .gp-cal {
+    background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gp-chart-svg,
+    .gp-chart-bar,
+    .gp-chart-pie-svg,
+    .gp-dp-pop {
+        animation: none;
+    }
+}

@@ -1,0 +1,143 @@
+/* Shown in the editor canvas only (never in the published pages): marks the
+   elements bound to collections. */
+
+[data-pb-list] {
+    outline: 1px dashed #3b82f6;
+    outline-offset: -1px;
+    min-height: 60px;
+}
+[data-pb-item] {
+    outline: 1px dashed rgba(59, 130, 246, 0.45);
+    outline-offset: -1px;
+}
+[data-pb-item]::before {
+    content: "repeated for each record";
+    display: block;
+    font: 11px/1.6 system-ui, sans-serif;
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.08);
+    padding: 0 6px;
+}
+[data-pb-empty] {
+    opacity: 0.6;
+    outline: 1px dotted #999;
+}
+[data-pb-field] {
+    background-color: rgba(16, 185, 129, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.45);
+}
+[data-pb-form] {
+    pointer-events: none;
+    min-height: 120px;
+    background: #f8fafc;
+}
+
+/* the editor's white body (GrapesJS) follows the theme of Basecoat pages */
+body {
+    background-color: var(--background, #fff) !important;
+    color: var(--foreground, inherit);
+}
+
+/* interactive Basecoat components: their hidden parts are shown while editing
+   (on the published page, tabs, menus, popovers and dialogs work normally) */
+.tabs > [role="tabpanel"][hidden] {
+    display: block !important;
+    outline: 1px dashed #a855f7;
+    outline-offset: 2px;
+    margin-top: 8px;
+}
+.tabs > [role="tabpanel"][hidden]::before,
+[data-popover]::before,
+dialog.dialog::before {
+    display: block;
+    font: 11px/1.6 system-ui, sans-serif;
+    color: #a855f7;
+}
+.tabs > [role="tabpanel"][hidden]::before {
+    content: "hidden tab (shown while editing)";
+}
+.dropdown-menu > [data-popover],
+.popover > [data-popover] {
+    position: static !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    transform: none !important;
+    display: block !important;
+    margin-top: 8px;
+    outline: 1px dashed #a855f7;
+}
+[data-popover]::before {
+    content: "menu / popover content (shown while editing)";
+    padding: 0 6px;
+}
+dialog.dialog:not([open]) {
+    display: block !important;
+    position: static !important;
+    margin: 12px 0;
+    width: 100%;
+    max-width: 560px;
+    outline: 1px dashed #a855f7;
+    background: transparent;
+}
+dialog.dialog::before {
+    content: "dialog (opens from its button on the published page)";
+}
+
+/* sidebar: on phones it stays closed while editing, like on the published
+   page (it opens with its toggle there); edit it at the computer width */
+
+/* site parts: shown as placed (edited in their own page) */
+[data-pb-part] {
+    position: relative;
+    min-height: 28px;
+    outline: 2px dashed #f59e0b;
+    outline-offset: -2px;
+}
+[data-pb-part]::after {
+    content: attr(data-gpp-label);
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 60;
+    padding: 1px 6px;
+    font: 11px/1.6 system-ui, sans-serif;
+    color: #fff;
+    background: #f59e0b;
+    pointer-events: none;
+}
+/* a sidebar part: the content after the placeholder makes room for it, like
+   on the published page (where the part replaces the placeholder) */
+@media (min-width: 48rem) {
+    [data-pb-part]:has(> .sidebar:not([data-side="right"]):not([aria-hidden="true"])) + * {
+        margin-left: var(--sidebar-width);
+    }
+    [data-pb-part]:has(> .sidebar[data-side="right"]:not([aria-hidden="true"])) + * {
+        margin-right: var(--sidebar-width);
+    }
+}
+
+/* members: elements shown to some visitors, messages of the actions */
+[data-pb-visible]:not([data-pb-visible=""]) {
+    outline: 1px dashed #a855f7;
+    outline-offset: 2px;
+}
+.gpp-viewing-as [data-pb-visible] {
+    outline: none;
+}
+[data-pb-message]:empty {
+    min-height: 40px;
+    border: 1px dashed #3b82f6;
+    border-radius: 8px;
+    background: repeating-linear-gradient(45deg, transparent 0 8px, rgba(59, 130, 246, 0.06) 8px 16px);
+}
+[data-pb-message]:empty::before {
+    content: "Messages of the actions (\"Welcome!\", \"Invalid password\"...) appear here";
+    display: block;
+    padding: 10px 12px;
+    font: 12px system-ui, sans-serif;
+    color: #3b82f6;
+}
+[data-pb-user] {
+    background: rgba(168, 85, 247, 0.1);
+    border-radius: 4px;
+}
