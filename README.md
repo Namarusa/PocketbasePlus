@@ -73,7 +73,7 @@ up SMTP in Settings → Mail settings.
 
 One image, `ghcr.io/namarusa/pocketbaseplus`, for **linux/amd64**, **linux/arm64** and **linux/arm/v7**: Docker picks the
 right one on Linux servers, Docker Desktop (Windows, macOS Intel and Apple Silicon), Synology, QNAP, Unraid, TrueNAS
-SCALE, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, `0.1.0`, `0.1`.
+SCALE, ZimaOS / CasaOS, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, `0.1.0`, `0.1`.
 
 ```sh
 docker run -d --name pocketbaseplus -p 8090:8090 \
@@ -89,9 +89,11 @@ the sources).
 
 - **Data**: everything (database, uploads, backups) is in the `/pb_data` volume: back it up, and keep it when you
   update the image (`docker compose pull && docker compose up -d`).
-- **Folders of the host** (bind mounts, NAS shares): the app runs as uid 65532, not root. Either give it the folder
-  (`sudo chown -R 65532:65532 ./pb_data`) or run the container as the folder's owner (`--user 1000:1000`, or `user:`
-  in Compose; on a Synology, the uid/gid of your user, shown by `id` over SSH).
+- **Folders of the host** (bind mounts, NAS app folders such as ZimaOS / CasaOS `/DATA/AppData/...`): nothing to
+  do. The container starts as root only to give `/pb_data` to `PUID:PGID` (65532 by default), then the app drops root
+  before opening the database. Set `PUID`/`PGID` to your user (e.g. `1000`) to keep the files yours on the host. On a
+  network share that refuses `chown`, set them to the share's owner. `--user` (or `user:` in Compose) still works:
+  the app then runs as that user from the start and the folder must already be writable by it.
 - **Health**: the image has a health check (`pocketbaseplus health`), shown as *healthy* by Docker, Portainer and the
   NAS app managers.
 - **HTTPS**: put the container behind your reverse proxy (Caddy, Traefik, Nginx Proxy Manager, the NAS one) and set
@@ -108,6 +110,7 @@ All are optional, and work the same way without Docker (`POCKETBASEPLUS_HTTP` is
 | `POCKETBASEPLUS_ADMIN_EMAIL`, `POCKETBASEPLUS_ADMIN_PASSWORD` | | Creates the first superuser when there is none yet (no installer link needed). An existing account is never changed: remove them after the first start. |
 | `POCKETBASEPLUS_ENCRYPTION_KEY` | | 32 characters (e.g. `openssl rand -hex 16`) encrypting the stored settings (SMTP password, S3 and OAuth2 secrets). Keep it safe: without it, the app can't start on that data anymore. Existing settings are encrypted at their next save. |
 | `POCKETBASEPLUS_HTTP` | `0.0.0.0:8090` in the image, `127.0.0.1:8090` otherwise | Address and port the server listens on. |
+| `PUID`, `PGID` | `65532` in the image | The user and group the app runs as in the container; `/pb_data` is given to them at startup (Linux, when started as root). |
 | `TZ` | `UTC` | Time zone of the server (logs, dates without a zone). Time zones are embedded in the binary. |
 | `POCKETBASEPLUS_FLOWS_ALLOW_PRIVATE_HTTP` | off | `1`: flows and API calls may reach private addresses (services of your network, other containers). |
 | `POCKETBASEPLUS_OFFLINE` | off | `1`: published pages load nothing from the internet (see [Offline deployment](#offline-deployment)). |

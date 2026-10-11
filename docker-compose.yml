@@ -7,11 +7,13 @@ services:
       - "8090:8090"
     volumes:
       - pocketbaseplus_data:/pb_data
-      # or a folder of the host (it must be writable by uid 65532, or set "user:" below):
+      # or a folder of the host (given to PUID:PGID at startup):
       # - ./pb_data:/pb_data
-    # user: "1000:1000"   # run as the owner of a host folder (NAS, bind mounts)
     environment:
       TZ: UTC
+      # the user the app runs as (and owner of the data folder); e.g. 1000 on a NAS
+      PUID: "65532"
+      PGID: "65532"
       # first superuser, created only when there is none yet (remove them after the first start)
       POCKETBASEPLUS_ADMIN_EMAIL: admin@example.com
       POCKETBASEPLUS_ADMIN_PASSWORD: change-me-to-a-long-password

@@ -42,6 +42,12 @@ func main() {
 		DefaultEncryptionEnv: deploy.EncryptionKeyEnv,
 	})
 
+	// in Docker: give the data folder to PUID/PGID and stop being root,
+	// before anything opens the database
+	if err := deploy.DropPrivileges(app.DataDir()); err != nil {
+		log.Fatal(err)
+	}
+
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
 		TemplateLang: migratecmd.TemplateLangGo,
 		Dir:          "migrations",

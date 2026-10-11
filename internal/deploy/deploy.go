@@ -26,6 +26,10 @@ const (
 	// AdminEmailEnv and AdminPasswordEnv create the first superuser.
 	AdminEmailEnv    = "POCKETBASEPLUS_ADMIN_EMAIL"
 	AdminPasswordEnv = "POCKETBASEPLUS_ADMIN_PASSWORD"
+	// PUIDEnv and PGIDEnv are the user the app runs as when started as root
+	// (the NAS convention; see DropPrivileges).
+	PUIDEnv = "PUID"
+	PGIDEnv = "PGID"
 
 	defaultAddr = "127.0.0.1:8090"
 )
@@ -57,8 +61,8 @@ func CheckDataDir(dir string) error {
 
 func dataDirError(dir string, err error) error {
 	return fmt.Errorf("the data folder %s isn't writable by this user (uid %d, gid %d): %w\n"+
-		"In Docker, give the mounted folder to the container's user (chown -R 65532:65532 <host folder>) "+
-		"or run the container as the folder's owner (--user <uid>:<gid>, or \"user:\" in Compose)",
+		"In Docker, set PUID and PGID to the owner of the mounted folder (e.g. PUID=1000, PGID=1000), "+
+		"or give the folder to the container's user (chown -R 65532:65532 <host folder>)",
 		dir, os.Getuid(), os.Getgid(), err)
 }
 

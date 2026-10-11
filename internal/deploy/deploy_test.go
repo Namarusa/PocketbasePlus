@@ -86,7 +86,7 @@ func TestCheckDataDir(t *testing.T) {
 	if err := os.Mkdir(locked, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckDataDir(locked); err == nil || !strings.Contains(err.Error(), "--user") {
+	if err := CheckDataDir(locked); err == nil || !strings.Contains(err.Error(), "PUID") {
 		t.Fatalf("expected an explanation, got %v", err)
 	}
 }
@@ -157,5 +157,24 @@ func TestHealth(t *testing.T) {
 	l.Close()
 	if Health([]string{"--http", free}) == 0 {
 		t.Fatal("no server must be unhealthy")
+	}
+}
+
+func TestPrivilegeSettings(t *testing.T) {
+	t.Setenv(PUIDEnv, "1000")
+	if id, err := envID(PUIDEnv); err != nil || id != 1000 {
+		t.Fatal(id, err)
+	}
+	for _, bad := range []string{"abc", "-1", "1000:1000"} {
+		t.Setenv(PUIDEnv, bad)
+		if _, err := envID(PUIDEnv); err == nil {
+			t.Errorf("%q must be refused", bad)
+		}
+	}
+	// not root: nothing happens, even with a bad value
+	if os.Getuid() != 0 {
+		if err := DropPrivileges(t.TempDir()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
