@@ -112,6 +112,8 @@ func Register(app core.App, mailEngine *mail.Engine) *Engine {
 		admin.Bind(apis.RequireSuperuserAuth())
 		admin.POST("/run/{id}", e.manualRun)
 		admin.GET("/template-variables/{id}", templateVariables)
+		admin.POST("/preview", e.preview)
+		admin.GET("/sample/{id}", sampleOf)
 
 		return se.Next()
 	})
@@ -269,6 +271,7 @@ type manualRunBody struct {
 	Payload    map[string]any `json:"payload"`
 	Trigger    map[string]any `json:"trigger"` // test runs of non manual flows
 	Wait       bool           `json:"wait"`
+	Sample     bool           `json:"sample"` // test run of the editor: keep its test data
 }
 
 // manualRun runs a flow from the dashboard: once per selected record for
@@ -321,8 +324,8 @@ func (e *Engine) manualRun(re *core.RequestEvent) error {
 	}
 
 	results := []map[string]any{}
-	for _, t := range triggers {
-		opts := RunOptions{Ctx: context.WithoutCancel(re.Request.Context()), Timeout: 2 * time.Minute}
+	for i, t := range triggers {
+		opts := RunOptions{Ctx: context.WithoutCancel(re.Request.Context()), Timeout: 2 * time.Minute, Sample: body.Sample && i == 0}
 		if flow.GetString("trigger_type") == TriggerAction {
 			// test run: the sign in is checked, nobody is signed in
 			opts.action = &actionState{ip: re.RealIP()}

@@ -1,7 +1,12 @@
-import { allCollections, api, field, formatDate, handleError, multiSelect, page, select, userCollections } from "./lib.js";
+import { allCollections, api, field, formatDate, handleError, multiSelect, page, recordLabel, select, userCollections } from "./lib.js";
 import { describeTrigger, flowsSidebar, loadFlows, triggerTypes } from "./flows.js";
 import { aiModels, loadAI, modelTypes, openModelModal } from "./aiSettings.js";
 import { actionAt, functionList, functionSnippet, insertAt } from "./functions.js";
+import { closest, dataList, lookup, previewLine, previewQueue, valueSummary } from "./bindings.js";
+
+// the data names usable without their dot ({{steps.api.body}}); "now", "last"
+// and "index" are also function names: they keep it (internal/flows/expr.go)
+const shortRoots = new Set(["trigger", "steps", "item", "flow"]);
 
 // --- step catalog -----------------------------------------------------------------
 
@@ -197,12 +202,16 @@ export function pageFlowEditor(route) {
         otherFlows: [],
         templateVars: {}, // templateId -> [paths]
         apiCalls: [], // saved API calls (APIs module)
+        sample: null, // test data of the last test run: {data: {trigger, steps, loops}, counts, created, status}
+        sampleVersion: 0,
         addMenu: "", // list position with an open "add step" menu
         collapsed: {},
         runs: [],
         aiv: {}, // AI step lists render versions (bumped on add/remove/move)
         get serialized() {
-            return JSON.stringify(data.flow);
+            // empty branches are left out: the server drops them when saving
+            // and the editor adds them back (the flow must not look changed)
+            return JSON.stringify(data.flow, (k, v) => ((k == "then" || k == "else" || k == "steps") && Array.isArray(v) && !v.length ? undefined : v));
         },
         get hasChanges() {
             return data.serialized != data.initSerialized;
@@ -224,13 +233,31 @@ export function pageFlowEditor(route) {
         }
     }
 
+    // the collections, fetched again when coming back to the tab (a collection
+    // created meanwhile in the native screens or another tab)
+    async function reloadCollections(refresh = true) {
+        try {
+            const all = await allCollections(refresh);
+            data.allCollections = all;
+            data.collections = await userCollections();
+        } catch (err) {
+            handleError(err);
+        }
+    }
+
+    function onVisible() {
+        if (document.visibilityState == "visible") {
+            reloadCollections();
+        }
+    }
+
     async function load() {
         try {
             loadAI(); // shared AI models list (model picker of the AI steps)
             loadPagesAndRoles();
             loadAPICalls();
             const [cols, all, templates, flows] = await Promise.all([
-                userCollections(),
+                allCollections(true).then(() => userCollections()),
                 allCollections(),
                 app.pb.collection("email_templates").getFullList({ sort: "name", fields: "id,name", requestKey: null }),
                 app.pb.collection("flows").getFullList({ sort: "name", fields: "id,name,trigger_type", requestKey: null }),
@@ -266,9 +293,24 @@ export function pageFlowEditor(route) {
             }
             data.initSerialized = data.serialized;
             data.isLoading = false;
+            loadSample();
             if (data.tab == "runs") {
                 loadRuns();
             }
+        } catch (err) {
+            handleError(err);
+        }
+    }
+
+    // the test data of the last run started from the editor (values of the picker and the previews)
+    async function loadSample() {
+        if (!data.savedId) {
+            return;
+        }
+        try {
+            const s = await api("/api/flows/sample/" + data.savedId, { requestKey: null });
+            data.sample = s?.data ? s : null;
+            data.sampleVersion++;
         } catch (err) {
             handleError(err);
         }
@@ -520,15 +562,189 @@ export function pageFlowEditor(route) {
 
     function loopItemGroup(loop) {
         const items = [{ path: "item", label: "current item" }, { path: "index", label: "index (0, 1, ...)" }];
-        const m = /^\{\{\s*\.steps\.([A-Za-z0-9_]+)\.items\s*\}\}$/.exec((loop.config?.items || "").trim());
+        const m = /^\{\{\s*\.?steps\.([A-Za-z0-9_]+)\.items\s*\}\}$/.exec((loop.config?.items || "").trim());
+        let source;
         if (m) {
-            let source;
             walkSteps(data.flow.steps, (s) => s.key == m[1] && (source = s));
-            if (source?.type == "get_records") {
-                items.push(...recordItems("item", source.config?.collection, "item."));
+        }
+        if (source?.type == "get_records") {
+            items.push(...recordItems("item", source.config?.collection, "item."));
+        } else {
+            // the fields of the first item of the list in the test data
+            const first = loopSample(loop)?.[0];
+            if (first && typeof first == "object" && !Array.isArray(first)) {
+                items.push(...Object.keys(first).sort().map((k) => ({ path: "item." + k, label: "item." + k })));
             }
         }
         return { name: `For each: ${loop.name || loop.key}`, icon: "ri-repeat-line", items };
+    }
+
+    // --- test data -------------------------------------------------------------------------
+
+    // the saved test response of the API call steps (before any test run)
+    function apiSample(step) {
+        const call = step?.type == "api_call" ? data.apiCalls.find((x) => x.id == step.config?.call) : null;
+        if (!call || call.sample === undefined || call.sample === null) {
+            return undefined;
+        }
+        const out = { ok: true, status: 200, body: call.sample, data: {} };
+        for (const o of call.outputs || []) {
+            out.data[o.name] = lookup(call.sample, o.path);
+        }
+        return out;
+    }
+
+    function stepByKey(key) {
+        let found;
+        walkSteps(data.flow.steps, (s) => s.key == key && (found = s));
+        return found;
+    }
+
+    // the list of a loop in the test data (its first items)
+    function loopSample(loop) {
+        const fromRun = data.sample?.data?.loops?.[loop.key];
+        if (fromRun?.length) {
+            return fromRun;
+        }
+        // not run yet: the list its expression gives in the test data
+        const m = /^\{\{\s*\.?([A-Za-z0-9_.]+)\s*\}\}$/.exec((loop.config?.items || "").trim());
+        const v = m ? sampleValue(m[1], []) : undefined;
+        return Array.isArray(v) ? v : undefined;
+    }
+
+    // the value of a path in the test data, seen from a step inside the given loops
+    function sampleValue(path, loops) {
+        const [root, ...rest] = path.split(".");
+        let base;
+        switch (root) {
+            case "trigger":
+                base = data.sample?.data?.trigger;
+                break;
+            case "steps": {
+                const key = rest.shift();
+                base = data.sample?.data?.steps?.[key];
+                if (base === undefined) {
+                    base = apiSample(stepByKey(key));
+                }
+                break;
+            }
+            case "item": {
+                const loop = loops[loops.length - 1];
+                base = loop ? loopSample(loop)?.[0] : undefined;
+                break;
+            }
+            case "index":
+                return loops.length ? 0 : undefined;
+            default:
+                return undefined;
+        }
+        return rest.length ? lookup(base, rest.join(".")) : base;
+    }
+
+    // the real length of a shortened list of the test data
+    function sampleCount(path, loops) {
+        const counts = data.sample?.counts || {};
+        if (path.startsWith("item")) {
+            const loop = loops[loops.length - 1];
+            return loop ? counts[`loops.${loop.key}.0${path.slice(4)}`] : undefined;
+        }
+        return counts[path];
+    }
+
+    function sampleOf(stepId) {
+        const loops = scopeOf(stepId).loops;
+        return (path) => {
+            data.sampleVersion; // refresh with the test data
+            const value = sampleValue(path, loops);
+            return value === undefined ? {} : { value, count: sampleCount(path, loops) };
+        };
+    }
+
+    // the test responses of the API steps the last run didn't reach (previews)
+    function extraSteps() {
+        const out = {};
+        walkSteps(data.flow.steps, (s) => {
+            if (s.type == "api_call" && data.sample?.data?.steps?.[s.key] === undefined) {
+                const v = apiSample(s);
+                if (v !== undefined) {
+                    out[s.key] = v;
+                }
+            }
+        });
+        return out;
+    }
+
+    const previews = previewQueue((items) =>
+        api("/api/flows/preview", { method: "POST", body: { flow: data.savedId, steps: extraSteps(), items }, requestKey: null }));
+
+    // problems found without the server: a step that doesn't exist (or runs
+    // later), "item" outside a For each, a missing }}
+    function checkExpr(src, stepId) {
+        const opens = (src.match(/\{\{/g) || []).length;
+        const closes = (src.match(/\}\}/g) || []).length;
+        if (opens > closes) {
+            return "Missing }} to close a {{";
+        }
+        const scope = scopeOf(stepId);
+        const before = new Set(scope.prev.map((s) => s.key));
+        const all = allKeys();
+        for (const action of src.match(/\{\{[\s\S]*?\}\}/g) || []) {
+            const code = action.replace(/"(?:[^"\\]|\\.)*"|`[^`]*`/g, '""');
+            for (const m of code.matchAll(/(?:^|[^\w.$])\.?steps\.([A-Za-z0-9_]+)/g)) {
+                const key = m[1];
+                if (before.has(key)) {
+                    continue;
+                }
+                if (all.has(key)) {
+                    return `steps.${key} runs after this step: its output isn't available here`;
+                }
+                const near = closest(key, [...before]);
+                return `No step "${key}" before this one` + (near ? ` (did you mean steps.${near}?)` : "");
+            }
+            if (!scope.loops.length && /(?:^|[^\w.$])\.?item\b/.test(code)) {
+                return `"item" is only available inside a For each`;
+            }
+        }
+        return "";
+    }
+
+    // "For each" from the picker: a loop over the list is added before the
+    // step, which moves inside it (its inputs can then use the item)
+    function loopOver(path, stepId) {
+        const found = findStep(stepId);
+        if (!found) {
+            app.toasts.info("Add a For each step, then pick this list as its items.");
+            return;
+        }
+        const keys = allKeys();
+        let key = "each";
+        for (let n = 2; keys.has(key); n++) {
+            key = "each" + n;
+        }
+        const loop = { id: randomId(), key, name: "For each", type: "loop", config: { ...defaultConfig("loop"), items: templateRef(path) }, steps: [] };
+        const { list, index, step } = found;
+        list.splice(index, 1, loop);
+        loop.steps.push(step);
+        app.toasts.success(`Added a For each over ${path}: pick the item fields in "For each".`);
+    }
+
+    // the list holding a step and its position
+    function findStep(stepId) {
+        let out = null;
+        const walk = (list) => {
+            for (let i = 0; i < (list || []).length && !out; i++) {
+                const s = list[i];
+                if (s.id == stepId) {
+                    out = { list, index: i, step: s };
+                    return;
+                }
+                walk(s.then);
+                walk(s.else);
+                walk(s.steps);
+            }
+        };
+        walk(data.flow.steps);
+        return out;
     }
 
     function variableGroups(stepId) {
@@ -598,36 +814,16 @@ export function pageFlowEditor(route) {
             () =>
                 state.tab == "functions"
                     ? functionList(state, insertFn)
-                    : t.div({ className: "gp-picker-list" }, () => {
-                          const q = state.search.toLowerCase();
-                          const result = [];
-                          for (const g of groups) {
-                              const items = g.items.filter((i) => !q || i.path.toLowerCase().includes(q) || (i.label || "").toLowerCase().includes(q));
-                              if (!items.length) {
-                                  continue;
-                              }
-                              result.push(
-                                  t.div(
-                                      { className: "gp-picker-title" },
-                                      g.icon ? t.i({ className: g.icon, ariaHidden: true }) : null,
-                                      t.span(null, g.name),
-                                  ),
-                                  ...items.map((i) =>
-                                      t.button(
-                                          {
-                                              type: "button",
-                                              className: "gp-picker-item",
-                                              onmousedown: (e) => e.preventDefault(),
-                                              onclick: () => insert(i.path),
-                                          },
-                                          t.span({ className: "txt" }, i.label || i.path),
-                                          t.code(null, i.path),
-                                      )
-                                  ),
-                              );
-                          }
-                          return result.length ? result : t.div({ className: "txt-hint txt-sm p-10" }, "No matching content.");
-                      }),
+                    : dataList({
+                        groups: () => groups,
+                        sample: sampleOf(stepId),
+                        onPick: insert,
+                        onLoop: findStep(stepId) ? (path) => {
+                            state.open = false;
+                            loopOver(path, stepId);
+                        } : null,
+                        state,
+                    }),
         );
     }
 
@@ -674,33 +870,156 @@ export function pageFlowEditor(route) {
             state.tab = "data"; // next: a value for the selected argument
         }
 
+        const loops = () => scopeOf(stepId).loops;
         return t.div(
-            { className: () => `gp-expr ${state.open ? "open" : ""}` },
+            { className: () => `gp-expr ${state.open ? "open" : ""} ${multiline ? "multiline" : ""}` },
             input,
-            t.button(
-                {
-                    type: "button",
-                    className: "btn xs secondary transparent circle gp-expr-btn",
-                    ariaLabel: app.attrs.tooltip("Insert dynamic content"),
-                    onmousedown: (e) => e.preventDefault(),
-                    onclick: () => (state.open = !state.open),
-                },
-                t.i({ className: "ri-flashlight-line", ariaHidden: true }),
+            t.div(
+                { className: "gp-expr-btns" },
+                t.button(
+                    {
+                        type: "button",
+                        className: "btn xs secondary transparent circle",
+                        ariaLabel: app.attrs.tooltip("Open the editor"),
+                        onmousedown: (e) => e.preventDefault(),
+                        onclick: () => {
+                            state.open = false;
+                            openBindingEditor(obj, key, stepId, { multiline, mono });
+                        },
+                    },
+                    t.i({ className: "ri-expand-diagonal-line", ariaHidden: true }),
+                ),
+                t.button(
+                    {
+                        type: "button",
+                        className: "btn xs secondary transparent circle gp-expr-btn",
+                        ariaLabel: app.attrs.tooltip("Insert dynamic content"),
+                        onmousedown: (e) => e.preventDefault(),
+                        onclick: () => (state.open = !state.open),
+                    },
+                    t.i({ className: "ri-flashlight-line", ariaHidden: true }),
+                ),
             ),
             () => (state.open ? pickerPanel(stepId, insert, state, insertFn) : null),
+            livePreview(() => obj[key], stepId, loops),
         );
+    }
+
+    // the large editor of an input (like Budibase's bindings drawer): the
+    // data with their values and the functions on the left, the expression
+    // and its live result on the right
+    function openBindingEditor(obj, key, stepId, { multiline = false, mono = false } = {}) {
+        const state = store({ value: obj[key] ?? "", search: "", tab: "data", category: "", expanded: {} });
+        let area;
+
+        function insertText(text, sel) {
+            insertAt(area, text, sel);
+            state.value = area.value;
+        }
+        function pick(path) {
+            const inAction = actionAt(area.value, area.selectionStart ?? area.value.length) != null;
+            const ref = templateRef(path);
+            insertText(inAction ? ref.replace(/^\{\{(index (.*))\}\}$/, "($1)").replace(/^\{\{(.*)\}\}$/, "$1") : ref);
+            state.search = "";
+        }
+        function pickFn(f) {
+            const { text, sel } = functionSnippet(f, area.value, area.selectionStart ?? area.value.length);
+            insertText(text, sel);
+            state.search = "";
+            state.tab = "data";
+        }
+        function apply() {
+            obj[key] = multiline ? state.value : state.value.replace(/\s*\n\s*/g, " ");
+            app.modals.close(modal);
+        }
+        const tab = (k, label, icon) =>
+            t.button(
+                { type: "button", className: () => `gp-tab-btn ${state.tab == k ? "active" : ""}`, onclick: () => (state.tab = k) },
+                t.i({ className: icon, ariaHidden: true }),
+                " " + label,
+            );
+
+        const modal = t.div(
+            { className: "modal popup lg gp-binding-modal" },
+            t.header({ className: "modal-header" }, t.h5({ className: "m-auto" }, "Dynamic value")),
+            t.div(
+                { className: "modal-content" },
+                t.div(
+                    { className: "gp-binding-editor" },
+                    t.div(
+                        { className: "gp-binding-side" },
+                        t.div({ className: "gp-picker-tabs" }, tab("data", "Data", "ri-database-2-line"), tab("functions", "Functions", "ri-functions")),
+                        t.div(
+                            { className: "field gp-bare" },
+                            t.input({
+                                type: "search",
+                                placeholder: () => (state.tab == "functions" ? "Search functions..." : "Search data..."),
+                                value: () => state.search,
+                                oninput: (e) => (state.search = e.target.value),
+                            }),
+                        ),
+                        () =>
+                            state.tab == "functions"
+                                ? functionList(state, pickFn)
+                                : dataList({ groups: () => variableGroups(stepId), sample: sampleOf(stepId), onPick: pick, state }),
+                    ),
+                    t.div(
+                        { className: "gp-binding-main" },
+                        (area = t.textarea({
+                            className: `gp-binding-area ${mono ? "txt-code" : ""}`,
+                            rows: 10,
+                            value: () => state.value,
+                            oninput: (e) => (state.value = e.target.value),
+                            onmount: (el) => setTimeout(() => el.focus(), 50),
+                        })),
+                        t.div({ className: "gp-label m-t-sm" }, "Result with the test data"),
+                        t.div({ className: "gp-binding-result" }, livePreview(() => state.value, stepId)),
+                        t.div(
+                            { className: "field-help m-t-sm" },
+                            "Click a value to insert it, e.g. {{steps.api.body.name}}. Functions take their values after the name: {{upper item.name}}, {{formatDate \"DD/MM/YYYY\" trigger.record.created}}. ",
+                            data.sample ? "" : "Run a test of the flow to see the values.",
+                        ),
+                    ),
+                ),
+            ),
+            t.footer(
+                { className: "modal-footer" },
+                t.button({ type: "button", className: "btn transparent secondary m-r-auto", onclick: () => app.modals.close(modal) }, t.span({ className: "txt" }, "Cancel")),
+                t.button({ type: "button", className: "btn expanded", onclick: apply }, t.span({ className: "txt" }, "Apply")),
+            ),
+        );
+        modal.onafterclose = () => modal.remove();
+        document.body.appendChild(modal);
+        app.modals.open(modal);
+    }
+
+    // the live result of an input, with the test data
+    function livePreview(expr, stepId, loops = () => scopeOf(stepId).loops) {
+        return previewLine({
+            expr,
+            loops: () => loops().map((l) => l.key),
+            item: () => {
+                const inner = loops()[loops().length - 1];
+                return inner && !data.sample?.data?.loops?.[inner.key]?.length ? loopSample(inner)?.[0] : undefined;
+            },
+            version: () => data.sampleVersion,
+            queue: previews,
+            check: (src) => checkExpr(src, stepId),
+        });
     }
 
     // a template reading a path: {{.a.b}}, or {{index .a "@id" 0}} when a part
     // isn't a template name (XML attributes, list positions, dashes...)
     function templateRef(path) {
         const parts = path.split(".");
+        // the roots without their dot: {{steps.api.body}}
+        const dot = shortRoots.has(parts[0]) ? "" : ".";
         const i = parts.findIndex((p) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(p));
         if (i <= 0) {
-            return `{{.${path}}}`;
+            return `{{${dot}${path}}}`;
         }
         const rest = parts.slice(i).map((p) => (/^\d+$/.test(p) ? p : JSON.stringify(p)));
-        return `{{index .${parts.slice(0, i).join(".")} ${rest.join(" ")}}}`;
+        return `{{index ${dot}${parts.slice(0, i).join(".")} ${rest.join(" ")}}}`;
     }
 
     // dynamic input without a label, with the native input styling
@@ -708,15 +1027,395 @@ export function pageFlowEditor(route) {
         return t.div({ className: "field gp-bare" }, exprInput(obj, key, stepId, opts));
     }
 
-    function collectionSelect(obj, key, { placeholder = "- Select collection -", list, required = true } = {}) {
-        return select({
-            name: key,
-            required,
-            placeholder,
-            options: () => (list || data.collections).map((c) => ({ value: c.name, label: c.name })),
-            value: () => obj[key],
-            onchange: (v) => (obj[key] = v),
+    // list: a function filtering data.allCollections (default: the user collections)
+    // --- values picked instead of typed -------------------------------------------------------
+
+    /**
+     * A dropdown of suggested values (lists for a For each, record ids...),
+     * or a custom dynamic value. options() → [{value, label}].
+     */
+    function choiceExpr(obj, key, stepId, { options, placeholder = "", mono = true, emptyLabel = "- Choose -" }) {
+        const state = store({ custom: false });
+        const known = () => !obj[key] || options().some((o) => o.value == obj[key]);
+        return t.div({ className: "gp-choice" }, () => {
+            if (state.custom || !known()) {
+                return t.div(
+                    { rid: "custom", className: "gp-choice-custom" },
+                    exprInput(obj, key, stepId, { placeholder, mono }),
+                    options().length
+                        ? t.button(
+                            {
+                                type: "button",
+                                className: "btn xs secondary transparent",
+                                onclick: () => {
+                                    state.custom = false;
+                                    if (!known()) {
+                                        obj[key] = "";
+                                    }
+                                },
+                            },
+                            t.i({ className: "ri-list-check", ariaHidden: true }),
+                            t.span({ className: "txt" }, "Choose from the list"),
+                        )
+                        : null,
+                );
+            }
+            return t.div(
+                { rid: "pick_" + (obj[key] || "") },
+                select({
+                    placeholder: emptyLabel,
+                    options: () => [...options(), { value: "__custom", label: "Custom value…" }],
+                    value: () => obj[key] || "",
+                    onchange: (v) => (v == "__custom" ? (state.custom = true) : (obj[key] = v)),
+                }),
+                livePreview(() => obj[key], stepId),
+            );
         });
+    }
+
+    // the lists available at a step: Get records items, and the lists of the
+    // test data (API and HTTP responses, variables, trigger...)
+    function listOptions(stepId) {
+        data.sampleVersion; // refresh with the test data
+        const { prev, loops } = scopeOf(stepId);
+        const out = [];
+        const add = (path, label) => {
+            const value = templateRef(path);
+            if (!out.some((o) => o.value == value)) {
+                out.push({ value, label });
+            }
+        };
+        const findLists = (v, path, depth, label) => {
+            if (Array.isArray(v)) {
+                const n = sampleCount(path, loops) ?? v.length;
+                add(path, `${label} (${n} item${n == 1 ? "" : "s"})`);
+                return;
+            }
+            if (v && typeof v == "object" && depth < 3) {
+                for (const k of Object.keys(v).sort()) {
+                    findLists(v[k], `${path}.${k}`, depth + 1, `${label} › ${k}`);
+                }
+            }
+        };
+        for (const loop of loops) {
+            findLists(sampleValue("item", [loop]), "item", 1, "Current item");
+        }
+        findLists(sampleValue("trigger", loops), "trigger", 0, "Trigger");
+        for (const st of prev) {
+            const name = st.name || stepTypes[st.type]?.label || st.key;
+            if (st.type == "get_records") {
+                add(`steps.${st.key}.items`, `${name} › records`);
+                continue;
+            }
+            findLists(sampleValue(`steps.${st.key}`, loops), `steps.${st.key}`, 0, name);
+        }
+        return out;
+    }
+
+    // the record ids available at a step for a collection
+    function idOptions(stepId, collectionName) {
+        const { prev, loops } = scopeOf(stepId);
+        const col = data.allCollections.find((c) => c.name == collectionName);
+        const same = (name) => !collectionName || name == collectionName || (col && name == col.id);
+        const out = [];
+        const add = (path, label) => {
+            const value = templateRef(path);
+            if (!out.some((o) => o.value == value)) {
+                out.push({ value, label });
+            }
+        };
+        const f = data.flow;
+        const tcol = f.trigger?.collection;
+        if ((f.trigger_type == "record" || f.trigger_type == "manual") && tcol) {
+            if (same(tcol)) {
+                add("trigger.record.id", `Trigger record (${tcol})`);
+            }
+            // relations of the trigger record to the collection
+            const tc = data.allCollections.find((c) => c.name == tcol);
+            for (const fl of tc?.fields || []) {
+                if (fl.type == "relation" && col && fl.collectionId == col.id && fl.maxSelect <= 1) {
+                    add(`trigger.record.${fl.name}`, `Trigger record › ${fl.name}`);
+                }
+            }
+        }
+        if (f.trigger_type == "action") {
+            add("trigger.record.id", "Record of the button");
+            if (col?.type == "auth") {
+                add("trigger.user.id", "Signed-in visitor");
+            }
+        }
+        for (const loop of loops) {
+            const src = /^\{\{\s*\.?steps\.([A-Za-z0-9_]+)\.items\s*\}\}$/.exec((loop.config?.items || "").trim());
+            const source = src ? stepByKey(src[1]) : null;
+            if (source?.type == "get_records" ? same(source.config?.collection) : sampleValue("item.id", [loop]) !== undefined) {
+                add("item.id", `Current item (${loop.name || loop.key})`);
+            }
+        }
+        for (const st of prev) {
+            const name = st.name || stepTypes[st.type]?.label || st.key;
+            if ((st.type == "create_record" || st.type == "update_record") && same(st.config?.collection)) {
+                add(`steps.${st.key}.id`, `${name} (its record)`);
+            }
+            if (st.type == "get_records" && same(st.config?.collection)) {
+                add(`steps.${st.key}.first.id`, `${name} (first record)`);
+            }
+            if (st.type == "sign_in" && same(st.config?.collection || "users")) {
+                add(`steps.${st.key}.user.id`, `${name} (signed-in user)`);
+            }
+        }
+        return out;
+    }
+
+    // the collection field a value reads (conditions: values matching its type)
+    function fieldOfPath(expr, stepId) {
+        const m = /^\{\{\s*\.?([A-Za-z0-9_.]+)\s*\}\}$/.exec(String(expr || "").trim());
+        if (!m) {
+            return null;
+        }
+        const parts = m[1].split(".");
+        let collection;
+        let name;
+        if (parts[0] == "trigger" && (parts[1] == "record" || parts[1] == "original") && parts.length == 3) {
+            collection = data.flow.trigger?.collection;
+            name = parts[2];
+        } else if (parts[0] == "steps" && parts.length >= 3) {
+            const st = stepByKey(parts[1]);
+            if (["create_record", "update_record", "delete_record"].includes(st?.type) && parts.length == 3) {
+                collection = st.config?.collection;
+                name = parts[2];
+            } else if (st?.type == "get_records" && parts[2] == "first" && parts.length == 4) {
+                collection = st.config?.collection;
+                name = parts[3];
+            }
+        } else if (parts[0] == "item" && parts.length == 2) {
+            const loop = scopeOf(stepId).loops.at(-1);
+            const src = /^\{\{\s*\.?steps\.([A-Za-z0-9_]+)\.items\s*\}\}$/.exec((loop?.config?.items || "").trim());
+            const st = src ? stepByKey(src[1]) : null;
+            if (st?.type == "get_records") {
+                collection = st.config?.collection;
+                name = parts[1];
+            }
+        }
+        const col = data.allCollections.find((c) => c.name == collection);
+        return col?.fields.find((f) => f.name == name) || null;
+    }
+
+    // the records of a collection for the relation fields (cached per editor)
+    // (a new object on each load: the store doesn't watch added keys)
+    const relationRecords = store({ byCollection: {} });
+    const loadingRelations = new Set();
+    function loadRelationRecords(collectionId) {
+        if (loadingRelations.has(collectionId)) {
+            return;
+        }
+        loadingRelations.add(collectionId);
+        app.pb.collection(collectionId).getList(1, 200, { sort: "-@rowid", requestKey: null })
+            .then((res) => (relationRecords.byCollection = { ...relationRecords.byCollection, [collectionId]: res.items }))
+            .catch(handleError);
+    }
+
+    // date fields: the stored format (UTC) <-> the local date of the input
+    const toLocalInput = (v) => {
+        const d = v ? new Date(String(v).replace(" ", "T")) : null;
+        if (!d || isNaN(d)) {
+            return "";
+        }
+        const pad = (n) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    const fromLocalInput = (v) => (v ? new Date(v).toISOString().replace("T", " ") : "");
+
+    const typedFieldTypes = new Set(["bool", "select", "number", "date", "autodate", "relation"]);
+
+    /**
+     * The value of a record field: an input matching its type (options of a
+     * select, a switch, a date, a record...), or a dynamic value (⚡).
+     */
+    function fieldValueInput(obj, f, stepId) {
+        if (!typedFieldTypes.has(f.type)) {
+            return bareExpr(obj, f.name, stepId, { placeholder: f.type == "json" ? "JSON or dynamic content" : "" });
+        }
+        const state = store({ dynamic: false });
+        const isDynamic = () => state.dynamic || String(obj[f.name] ?? "").includes("{{");
+        return t.div(
+            { className: "gp-typed" },
+            () => {
+                if (isDynamic()) {
+                    return t.div({ rid: "dyn", className: "gp-typed-input" }, bareExpr(obj, f.name, stepId));
+                }
+                // the dropdowns are rebuilt with their value (a reused one keeps the old
+                // selection); the inputs keep their element (and the focus)
+                const keyed = ["select", "bool", "relation"].includes(f.type) ? JSON.stringify(obj[f.name] ?? "") : "";
+                return t.div({ rid: "fixed_" + keyed, className: "gp-typed-input" }, fixedInput(obj, f));
+            },
+            t.button(
+                {
+                    type: "button",
+                    className: () => `btn xs circle transparent ${isDynamic() ? "" : "secondary"}`,
+                    ariaLabel: app.attrs.tooltip("Fixed value / dynamic content"),
+                    onclick: () => {
+                        if (isDynamic()) {
+                            state.dynamic = false;
+                            delete obj[f.name];
+                        } else {
+                            state.dynamic = true;
+                        }
+                    },
+                },
+                t.i({ className: () => (isDynamic() ? "ri-flashlight-fill" : "ri-flashlight-line"), ariaHidden: true }),
+            ),
+        );
+    }
+
+    const boxed = (input) => t.div({ className: "field gp-bare" }, input);
+
+    function fixedInput(obj, f) {
+        const set = (v) => {
+            if (v === "" || v === undefined || (Array.isArray(v) && !v.length)) {
+                delete obj[f.name];
+            } else {
+                obj[f.name] = v;
+            }
+        };
+        switch (f.type) {
+            case "bool":
+                return boxed(select({
+                    placeholder: "Not set",
+                    options: [{ value: "true", label: "Yes (true)" }, { value: "false", label: "No (false)" }],
+                    value: () => (obj[f.name] === undefined || obj[f.name] === "" ? "" : String(obj[f.name])),
+                    onchange: (v) => set(v === "" ? "" : v == "true"),
+                }));
+            case "select": {
+                const opts = (f.values || []).map((v) => ({ value: v, label: v }));
+                return boxed(f.maxSelect > 1
+                    ? multiSelect({ placeholder: "Not set", options: opts, max: f.maxSelect, value: () => [].concat(obj[f.name] ?? []), onchange: set })
+                    : select({ placeholder: "Not set", options: opts, value: () => obj[f.name] ?? "", onchange: set }));
+            }
+            case "number":
+                return t.div(
+                    { className: "field gp-bare" },
+                    t.input({ type: "number", step: "any", placeholder: "Not set", value: () => obj[f.name] ?? "", oninput: (e) => set(e.target.value === "" ? "" : Number(e.target.value)) }),
+                );
+            case "date":
+            case "autodate":
+                return t.div(
+                    { className: "gp-date-input" },
+                    t.div(
+                        { className: "field gp-bare" },
+                        t.input({ type: "datetime-local", value: () => toLocalInput(obj[f.name]), onchange: (e) => set(fromLocalInput(e.target.value)) }),
+                    ),
+                    ...[["Now", "{{now}}"], ["+1 day", "{{addDays 1 now}}"], ["+7 days", "{{addDays 7 now}}"], ["+30 days", "{{addDays 30 now}}"]].map(([label, v]) =>
+                        t.button({ type: "button", className: "btn xs secondary transparent", title: v, onclick: () => set(v) }, label)
+                    ),
+                );
+            case "relation": {
+                loadRelationRecords(f.collectionId);
+                const opts = () => (relationRecords.byCollection[f.collectionId] || []).map((r) => ({ value: r.id, label: `${recordLabel(r)}${recordLabel(r) != r.id ? ` (${r.id})` : ""}` }));
+                return boxed(f.maxSelect > 1
+                    ? multiSelect({ placeholder: "Not set", options: opts, max: f.maxSelect, value: () => [].concat(obj[f.name] ?? []), onchange: set })
+                    : select({ placeholder: "Not set", options: opts, value: () => obj[f.name] ?? "", onchange: set }));
+            }
+        }
+        return bareExpr(obj, f.name, null);
+    }
+
+    // a filter condition added from fields and values (Get records)
+    const filterOps = [
+        { value: "=", label: "is" },
+        { value: "!=", label: "is not" },
+        { value: ">", label: ">" },
+        { value: ">=", label: "≥" },
+        { value: "<", label: "<" },
+        { value: "<=", label: "≤" },
+        { value: "~", label: "contains" },
+        { value: "!~", label: "doesn't contain" },
+    ];
+    function filterBuilder(c, stepId) {
+        const state = store({ open: false, field: "", op: "=", value: {} });
+        const col = () => data.allCollections.find((x) => x.name == c.collection);
+        const fieldDef = () => col()?.fields.find((f) => f.name == state.field);
+        function literal(v, f) {
+            if (typeof v == "string" && v.includes("{{")) {
+                return v.trim(); // bound as a parameter when the flow runs
+            }
+            if (f?.type == "number" || f?.type == "bool") {
+                return String(v);
+            }
+            return "'" + String(v ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
+        }
+        function addCondition() {
+            const f = fieldDef();
+            if (!f) {
+                return;
+            }
+            const v = state.value[f.name] ?? "";
+            const cond = `${f.name} ${state.op} ${literal(v, f)}`;
+            c.filter = c.filter?.trim() ? `${c.filter.trim()} && ${cond}` : cond;
+            state.open = false;
+            state.value = {};
+        }
+        return () => {
+            if (!col()) {
+                return null;
+            }
+            if (!state.open) {
+                return t.button(
+                    { rid: "add", type: "button", className: "btn xs secondary transparent m-t-5", onclick: () => (state.open = true) },
+                    t.i({ className: "ri-add-line", ariaHidden: true }),
+                    t.span({ className: "txt" }, "Add a condition"),
+                );
+            }
+            return t.div(
+                { rid: "builder", className: "gp-filter-builder" },
+                t.div({ className: "field gp-bare" }, select({
+                    placeholder: "Field",
+                    options: () => col().fields.filter((f) => f.type != "password" && !f.hidden).map((f) => ({ value: f.name, label: f.name })),
+                    value: () => state.field,
+                    onchange: (v) => {
+                        state.field = v;
+                        state.value = {};
+                    },
+                })),
+                t.div({ className: "field gp-bare gp-op" }, select({ options: filterOps, value: () => state.op, onchange: (v) => (state.op = v || "=") })),
+                () => (fieldDef() ? t.div({ rid: "v_" + state.field, className: "gp-filter-value" }, fieldValueInput(state.value, fieldDef(), stepId)) : t.div({ rid: "nov" })),
+                t.button({ type: "button", className: "btn sm", disabled: () => !fieldDef(), onclick: addCondition }, t.span({ className: "txt" }, "Add")),
+                t.button({ type: "button", className: "btn sm circle transparent secondary", ariaLabel: app.attrs.tooltip("Cancel"), onclick: () => (state.open = false) }, t.i({ className: "ri-close-line", ariaHidden: true })),
+            );
+        };
+    }
+
+    function collectionSelect(obj, key, { placeholder = "- Select collection -", list, required = true } = {}) {
+        return t.div(
+            { className: "gp-with-reload" },
+            select({
+                name: key,
+                required,
+                placeholder,
+                options: () => (list ? list() : data.collections).map((c) => ({ value: c.name, label: c.name })),
+                value: () => obj[key],
+                onchange: (v) => (obj[key] = v),
+            }),
+            t.button(
+                {
+                    type: "button",
+                    className: "btn xs circle transparent secondary",
+                    ariaLabel: app.attrs.tooltip("Reload the collections"),
+                    onclick: () => reloadCollections(),
+                },
+                t.i({ className: "ri-refresh-line", ariaHidden: true }),
+            ),
+        );
+    }
+
+    // the value of a condition rule: the options of a select or bool field
+    // read on the left side, or any value
+    function conditionValue(rule, sid) {
+        const f = fieldOfPath(rule.left, sid);
+        if (f?.type == "select" || f?.type == "bool") {
+            const options = () => (f.type == "bool" ? ["true", "false"] : f.values || []).map((v) => ({ value: v, label: v }));
+            return choiceExpr(rule, "right", sid, { options, mono: false, emptyLabel: "- Choose a value -" });
+        }
+        return bareExpr(rule, "right", sid, { placeholder: "value" });
     }
 
     function plainSelect(obj, key, options) {
@@ -768,7 +1467,7 @@ export function pageFlowEditor(route) {
                             t.div(
                                 { rid: c.id + f.name, className: "gp-mapping-row" },
                                 t.div({ className: "gp-mapping-label" }, t.span(null, f.name), t.small({ className: "txt-hint" }, f.type)),
-                                bareExpr(cfg.data, f.name, stepId, { placeholder: f.type == "relation" ? "record id" : "" }),
+                                fieldValueInput(cfg.data, f, stepId),
                             )
                         ),
                 ];
@@ -989,7 +1688,7 @@ export function pageFlowEditor(route) {
             t.div(
                 { className: "grid sm" },
                 t.div({ className: "col-lg-6" }, field({ label: "Collection" }, collectionSelect(o, "collection", {
-                    list: data.allCollections.filter((x) => !x.name.startsWith("_") && x.fields.some((f) => f.type == "select")),
+                    list: () => data.allCollections.filter((x) => !x.name.startsWith("_") && x.fields.some((f) => f.type == "select")),
                 }))),
                 t.div({ className: "col-lg-6" }, field({ label: "Select field" }, select({
                     required: true,
@@ -1035,7 +1734,7 @@ export function pageFlowEditor(route) {
             null,
             t.div(
                 { className: "grid sm" },
-                t.div({ className: "col-lg-6" }, field({ label: "Collection" }, collectionSelect(o, "collection", { list: data.allCollections.filter((x) => !x.name.startsWith("_")) }))),
+                t.div({ className: "col-lg-6" }, field({ label: "Collection" }, collectionSelect(o, "collection", { list: () => data.allCollections.filter((x) => !x.name.startsWith("_")) }))),
                 t.div({ className: "col-lg-3" }, field({ label: "Sort" }, t.input({ type: "text", className: "txt-code", placeholder: "name", value: () => o.sort || "", oninput: (e) => (o.sort = e.target.value) }))),
                 t.div({ className: "col-lg-3" }, field({ label: "Max options" }, numberInput(o, "limit", { min: 2, max: 255, placeholder: "100" }))),
             ),
@@ -1311,11 +2010,12 @@ export function pageFlowEditor(route) {
                                         t.span({ className: "txt-code" }, v.name),
                                         v.required || v.api ? t.small({ className: "txt-hint" }, [v.api ? "API" : "", v.required ? "required" : ""].filter(Boolean).join(" · ")) : null,
                                     ),
-                                    bareExpr(c.vars, v.name, sid),
+                                    bareExpr(c.vars, v.name, sid, { placeholder: v.default ? `default: ${v.default}` : v.required ? "required" : "" }),
                                 )
                             ),
                         )
                         : t.div({ className: "field-help m-b-sm" }, "The call has no variables."),
+                    responseLists(x, sid),
                     !x.fields.length && !x.outputs.length
                         ? t.div({ className: "field-help m-t-5" }, "Test the call once (Edit the call → Test) to pick its response fields in the next steps.")
                         : null,
@@ -1323,6 +2023,55 @@ export function pageFlowEditor(route) {
             },
             t.div({ className: "m-t-sm" }, switchField(c, "failOnError", "Fail the step on error status (4xx/5xx)", "fail_" + sid)),
         ];
+    }
+
+    // the lists of the saved test response of a call: a For each in one click
+    function responseLists(call, sid) {
+        const body = call.sample;
+        if (body === undefined || body === null) {
+            return null;
+        }
+        const key = findStep(sid)?.step?.key;
+        const lists = [];
+        const walk = (v, path, depth) => {
+            if (Array.isArray(v)) {
+                lists.push(path);
+                return;
+            }
+            if (v && typeof v == "object" && depth < 3) {
+                for (const k of Object.keys(v).sort()) {
+                    walk(v[k], path ? `${path}.${k}` : k, depth + 1);
+                }
+            }
+        };
+        walk(body, "", 0);
+        return t.div(
+            { className: "gp-api-response m-t-sm" },
+            t.span({ className: "txt-hint txt-sm" }, "Response (last test): ", t.code(null, valueSummary(body))),
+            ...lists.slice(0, 4).map((p) => {
+                const path = `steps.${key}.body${p ? "." + p : ""}`;
+                return t.button(
+                    { type: "button", className: "btn xs secondary transparent", title: `Add a For each step over ${path} after this step`, onclick: () => addLoopAfter(sid, path) },
+                    t.i({ className: "ri-repeat-line", ariaHidden: true }),
+                    t.span({ className: "txt" }, `For each ${p || "item"}`),
+                );
+            }),
+        );
+    }
+
+    // a For each step over a list, after a step
+    function addLoopAfter(stepId, path) {
+        const found = findStep(stepId);
+        if (!found) {
+            return;
+        }
+        const keys = allKeys();
+        let key = "each";
+        for (let n = 2; keys.has(key); n++) {
+            key = "each" + n;
+        }
+        found.list.splice(found.index + 1, 0, { id: randomId(), key, name: "For each", type: "loop", config: { ...defaultConfig("loop"), items: templateRef(path) }, steps: [] });
+        app.toasts.success(`Added a For each over ${path}: add its steps inside, they can use the fields of "current item".`);
     }
 
     function aiModelPicker(c, wanted) {
@@ -1646,7 +2395,7 @@ export function pageFlowEditor(route) {
                                 () =>
                                     rule.op == "empty" || rule.op == "not_empty"
                                         ? t.div({ rid: "noright", className: "gp-rule-noright" })
-                                        : t.div({ rid: "right" }, bareExpr(rule, "right", sid, { placeholder: "value" })),
+                                        : t.div({ rid: "right_" + (fieldOfPath(rule.left, sid)?.type || "") }, conditionValue(rule, sid)),
                                 t.button(
                                     { type: "button", className: "btn sm circle transparent danger", ariaLabel: app.attrs.tooltip("Remove rule"), onclick: () => c.rules.splice(i, 1) },
                                     t.i({ className: "ri-close-line", ariaHidden: true }),
@@ -1666,7 +2415,10 @@ export function pageFlowEditor(route) {
                 ];
             case "loop":
                 return [
-                    field({ label: "Items (a list)", hint: `Pick a list, for example the "items" of a "Get records" step. Inside the loop use "current item".` }, exprInput(c, "items", sid, { placeholder: "{{.steps.records.items}}", mono: true })),
+                    field(
+                        { label: "Items (a list)", hint: `The records of a "Get records" step, a list of an API response... Inside the loop, pick the fields of "current item". Run a test to list the lists of the responses.` },
+                        choiceExpr(c, "items", sid, { options: () => listOptions(sid), placeholder: "{{steps.records.items}}", emptyLabel: "- Choose a list -" }),
+                    ),
                     field({ label: "Max iterations" }, numberInput(c, "max", { min: 1, max: 10000 })),
                     t.div({ className: "gp-branch loop" }, t.div({ className: "gp-branch-title" }, t.i({ className: "ri-repeat-line" }), "For each item"), stepList(s, "steps")),
                 ];
@@ -1696,12 +2448,13 @@ export function pageFlowEditor(route) {
                 return [
                     visitorRules(c, sid),
                     t.div({ className: "grid sm" },
-                        t.div({ className: "col-lg-6" }, field({ label: "Collection" }, collectionSelect(c, "collection", { list: data.allCollections.filter((x) => !x.name.startsWith("_")) }))),
+                        t.div({ className: "col-lg-6" }, field({ label: "Collection" }, collectionSelect(c, "collection", { list: () => data.allCollections.filter((x) => !x.name.startsWith("_")) }))),
                         t.div({ className: "col-lg-3" }, field({ label: "Sort" }, t.input({ type: "text", className: "txt-code", placeholder: "-created", value: () => c.sort || "", oninput: (e) => (c.sort = e.target.value) }))),
                         t.div({ className: "col-lg-3" }, field({ label: "Limit" }, numberInput(c, "limit", { min: 1, max: 1000 }))),
                     ),
-                    field({ label: "Filter", hint: "PocketBase filter syntax. Dynamic content is passed as safe parameters, e.g. owner = {{.trigger.record.id}}" },
+                    field({ label: "Filter", hint: "PocketBase filter syntax, or \"Add a condition\". Dynamic content is passed as safe parameters, e.g. owner = {{trigger.record.id}}" },
                         exprInput(c, "filter", sid, { placeholder: "status = 'active' && total > 100", mono: true })),
+                    filterBuilder(c, sid),
                 ];
             case "create_record":
                 return [
@@ -1714,7 +2467,7 @@ export function pageFlowEditor(route) {
                     visitorRules(c, sid),
                     t.div({ className: "grid sm" },
                         t.div({ className: "col-lg-6" }, field({ label: "Collection" }, collectionSelect(c, "collection"))),
-                        t.div({ className: "col-lg-6" }, field({ label: "Record id" }, exprInput(c, "recordId", sid, { placeholder: "{{.trigger.record.id}}", mono: true }))),
+                        t.div({ className: "col-lg-6" }, field({ label: "Record" }, choiceExpr(c, "recordId", sid, { options: () => idOptions(sid, c.collection), placeholder: "{{trigger.record.id}}", emptyLabel: "- Choose the record -" }))),
                     ),
                     recordFieldsEditor(c, () => c.collection, sid, "Only the fields with a value are changed."),
                 ];
@@ -1723,7 +2476,7 @@ export function pageFlowEditor(route) {
                     visitorRules(c, sid),
                     t.div({ className: "grid sm" },
                         t.div({ className: "col-lg-6" }, field({ label: "Collection" }, collectionSelect(c, "collection"))),
-                        t.div({ className: "col-lg-6" }, field({ label: "Record id" }, exprInput(c, "recordId", sid, { placeholder: "{{.item.id}}", mono: true }))),
+                        t.div({ className: "col-lg-6" }, field({ label: "Record" }, choiceExpr(c, "recordId", sid, { options: () => idOptions(sid, c.collection), placeholder: "{{item.id}}", emptyLabel: "- Choose the record -" }))),
                     ),
                 ];
             case "set_trigger":
@@ -1829,7 +2582,7 @@ export function pageFlowEditor(route) {
                         : t.div(
                             { rid: "signin" },
                             field({ label: "Users collection", hint: "An auth collection with password sign in (superusers can't sign in on pages)." }, collectionSelect(c, "collection", {
-                                list: data.allCollections.filter((x) => x.type == "auth" && x.name != "_superusers"),
+                                list: () => data.allCollections.filter((x) => x.type == "auth" && x.name != "_superusers"),
                             })),
                             t.div({ className: "grid sm" },
                                 t.div({ className: "col-lg-6" }, field({ label: "Email (or username)" }, exprInput(c, "identity", sid, { mono: true }))),
@@ -2314,7 +3067,9 @@ export function pageFlowEditor(route) {
             try {
                 const res = await app.pb.collection(cfg.collection).getList(1, 50, { sort: "-@rowid", requestKey: null });
                 runData.records = res.items;
-                runData.recordId = res.items[0]?.id || "";
+                // the record of the last test first
+                const last = data.sample?.data?.trigger?.record?.id;
+                runData.recordId = res.items.some((r) => r.id == last) ? last : res.items[0]?.id || "";
             } catch (err) {
                 handleError(err);
             }
@@ -2325,7 +3080,9 @@ export function pageFlowEditor(route) {
             flow: { payload: {} },
             action: { form: { email: "someone@example.com", password: "" }, user: null, page: "/login", next: "" },
         };
-        runData.trigger = JSON.stringify(examples[f.trigger_type] || {}, null, 2);
+        // the trigger data of the last test, or an example
+        const lastTrigger = data.sample?.data?.trigger;
+        runData.trigger = JSON.stringify(lastTrigger && Object.keys(lastTrigger).length ? lastTrigger : examples[f.trigger_type] || {}, null, 2);
         app.modals.open(runModal);
     }
 
@@ -2343,8 +3100,11 @@ export function pageFlowEditor(route) {
             } else {
                 body = { wait: true, trigger: JSON.parse(runData.trigger || "{}") };
             }
+            // the run keeps its data: the test data of the picker and the previews
+            body.sample = true;
             const res = await api("/api/flows/run/" + data.savedId, { method: "POST", body });
             runData.result = res.runs?.[0] || null;
+            loadSample();
         } catch (err) {
             handleError(err);
         }
@@ -2414,6 +3174,32 @@ export function pageFlowEditor(route) {
             ),
         ),
     );
+
+    // where the values of the picker and the previews come from
+    function testDataBar() {
+        return t.div({ className: "gp-testdata" }, () => {
+            const smp = data.sample;
+            if (!data.savedId) {
+                return t.span({ rid: "new", className: "txt-hint" }, t.i({ className: "ri-flask-line", ariaHidden: true }), " Save the flow, then run a test: each value shows its result with the test data.");
+            }
+            return [
+                smp
+                    ? t.span(
+                        { rid: "has_" + smp.run + smp.status },
+                        t.i({ className: "ri-flask-line", ariaHidden: true }),
+                        " Test data: run of ",
+                        t.strong(null, formatDate(smp.created)),
+                        smp.status && smp.status != "success" ? t.span({ className: "label sm warning m-l-5" }, smp.status) : null,
+                    )
+                    : t.span({ rid: "none", className: "txt-hint" }, t.i({ className: "ri-flask-line", ariaHidden: true }), " No test data yet: run a test to see the values of each step."),
+                t.button(
+                    { rid: smp ? "again" : "first", type: "button", className: "btn xs outline m-l-auto", onclick: openRun },
+                    t.i({ className: "ri-play-line", ariaHidden: true }),
+                    t.span({ className: "txt" }, smp ? "Run again" : "Run a test"),
+                ),
+            ];
+        });
+    }
 
     // --- runs history --------------------------------------------------------------------------
 
@@ -2580,6 +3366,7 @@ export function pageFlowEditor(route) {
                 className: "gp-flow",
                 onmount: async () => {
                     window.addEventListener("keydown", onKeydown);
+                    document.addEventListener("visibilitychange", onVisible);
                     if (!isNew) {
                         try {
                             unsubscribeRuns = await app.pb.collection("flow_runs").subscribe("*", (e) => {
@@ -2594,6 +3381,7 @@ export function pageFlowEditor(route) {
                 },
                 onunmount: () => {
                     window.removeEventListener("keydown", onKeydown);
+                    document.removeEventListener("visibilitychange", onVisible);
                     unsubscribeRuns?.();
                 },
             },
@@ -2632,6 +3420,7 @@ export function pageFlowEditor(route) {
                                 ? runsPanel()
                                 : t.div(
                                     { rid: "editor", className: "gp-flow-canvas" },
+                                    testDataBar(),
                                     triggerCard(),
                                     t.div({ className: "gp-connector" }),
                                     stepList(data.flow, "steps"),

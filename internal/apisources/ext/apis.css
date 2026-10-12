@@ -304,3 +304,57 @@
     border: 0;
     font-family: var(--monospaceFontFamily);
 }
+
+/* a row of name/value pairs with the "make it a variable" button */
+.gp-kv-row.gp-kv-row-var {
+    grid-template-columns: 180px minmax(0, 1fr) auto auto;
+}
+@media (max-width: 760px) {
+    .gp-kv-row.gp-kv-row-var {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+    .gp-kv-row.gp-kv-row-var > :first-child {
+        grid-column: 1 / -1;
+    }
+}
+
+/* a variable no template uses */
+.gp-api-var-row.unused input {
+    color: var(--surfaceTxtHintColor);
+    text-decoration: line-through;
+    text-decoration-color: var(--surfaceTxtHintColor);
+}
+
+/* the request as it will be sent */
+.gp-api-preview {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    margin: 6px 0 2px;
+    padding: 6px 10px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+    font-size: var(--smFontSize);
+    min-width: 0;
+}
+.gp-api-preview code {
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+.gp-api-preview.error {
+    color: var(--dangerColor);
+}
+.gp-api-section-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.gp-api-section-row h6 {
+    margin-right: auto;
+}
+
+/* the fields of the response: outputs or not */
+.gp-api-add.active {
+    color: var(--successColor);
+    opacity: 1;
+}

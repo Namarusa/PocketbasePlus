@@ -91,7 +91,7 @@ func Bind(app core.App) {
 		if strings.Contains(secret, "{{") {
 			// a secret made of variables: show which ones (not the rest of it)
 			var refs []string
-			for _, m := range varRefRegex.FindAllStringSubmatch(secret, -1) {
+			for _, m := range varRefRegex.FindAllStringSubmatch(expand(secret, shortNames(variablesOf(rec))), -1) {
 				refs = append(refs, "{{.vars."+m[1]+"}}")
 			}
 			rec.Set("secret_hint", "from "+strings.Join(refs, " "))
@@ -240,13 +240,30 @@ func checkVariables(r *core.Record, errs validation.Errors) map[string]bool {
 	return declared
 }
 
+// a {{name}} that isn't a declared variable (nor a function)
+var undefinedFuncRegex = regexp.MustCompile(`function "([^"]+)" not defined`)
+
+func shortNamesOf(declared map[string]bool) []string {
+	list := make([]Variable, 0, len(declared))
+	for name := range declared {
+		list = append(list, Variable{Name: name})
+	}
+	return shortNames(list)
+}
+
 // templateChecker checks that templates parse and only use declared variables.
 func templateChecker(declared map[string]bool, errs validation.Errors) func(field, src string) {
 	return func(field, src string) {
 		if _, done := errs[field]; done || !strings.Contains(src, "{{") {
 			return
 		}
+		src = expand(src, shortNamesOf(declared))
 		if err := flows.ValidateTemplate(src); err != nil {
+			// {{name}} of a variable that isn't declared is read as a function
+			if m := undefinedFuncRegex.FindStringSubmatch(err.Error()); m != nil && nameRegex.MatchString(m[1]) {
+				errs[field] = validation.NewError("unknown_variable", fmt.Sprintf("Add the variable %q (or fix its name).", m[1]))
+				return
+			}
 			errs[field] = validation.NewError("invalid_template", "Invalid template: "+err.Error())
 			return
 		}
@@ -277,11 +294,7 @@ func checkPairs(r *core.Record, field string, headers, templates bool) error {
 		if strings.ContainsAny(v, "\r\n") && headers {
 			return validation.NewError("invalid_value", fmt.Sprintf("%s: the value has a line break.", k))
 		}
-		if templates {
-			if err := flows.ValidateTemplate(v); err != nil {
-				return validation.NewError("invalid_template", fmt.Sprintf("%s: %v", k, err))
-			}
-		}
+		_ = templates // the templates are checked with the variables (templateChecker)
 	}
 	return nil
 }
@@ -353,6 +366,8 @@ func testRoute(e *core.RequestEvent) error {
 		Source string         `json:"source"`
 		Call   map[string]any `json:"call"`
 		Vars   map[string]any `json:"vars"`
+		// only render the request (the live preview of the editor)
+		DryRun bool `json:"dryRun"`
 	}
 	if err := e.BindBody(&body); err != nil {
 		return e.BadRequestError("Invalid body.", err)
@@ -370,21 +385,50 @@ func testRoute(e *core.RequestEvent) error {
 	call.Load(body.Call)
 	call.Set("source", source.Id)
 	if err := validateCall(e.App, call); err != nil {
+		if body.DryRun {
+			return e.JSON(http.StatusOK, map[string]any{"error": firstError(err)})
+		}
 		return e.BadRequestError("Fix the call first.", err)
 	}
 	vars := body.Vars
 	if vars == nil {
-		// the test values of the API's variables and of the call's
+		// the default values (used by prepare), or the test values of the calls
+		// saved before the defaults
 		vars = map[string]any{}
 		for _, v := range allVariables(source, call) {
-			vars[v.Name] = v.Test
+			if v.Default == "" && v.Test != "" {
+				vars[v.Name] = v.Test
+			}
 		}
+	}
+
+	if body.DryRun {
+		input, req, _, err := prepare(source, call, vars)
+		res := map[string]any{"request": input}
+		if err == nil {
+			full := req.URL
+			if len(req.Query) > 0 {
+				sep := "?"
+				if strings.Contains(full, "?") {
+					sep = "&"
+				}
+				full += sep + hideQuerySecret(source, req.Query).Encode()
+			}
+			res["url"] = full
+		} else {
+			res["error"] = err.Error()
+		}
+		return e.JSON(http.StatusOK, res)
 	}
 
 	input, output, err := run(e.Request.Context(), source, call, vars)
 	res := map[string]any{"request": input}
 	if err != nil {
 		res["error"] = err.Error()
+	}
+	status, _ := output["status"].(int)
+	if hint := errorHint(err, status, source); hint != "" {
+		res["hint"] = hint
 	}
 	if output != nil {
 		res["status"], res["ok"], res["format"] = output["status"], output["ok"], output["format"]
@@ -400,7 +444,7 @@ func testRoute(e *core.RequestEvent) error {
 	}
 	if body.ID != "" && output != nil && err == nil {
 		if saved, ferr := e.App.FindRecordById(CallsCollection, body.ID); ferr == nil {
-			saved.Set("sample", map[string]any{"format": output["format"], "body": prune(output["body"], 3, 200)})
+			saved.Set("sample", map[string]any{"format": output["format"], "body": prune(output["body"], 20, 300)})
 			_ = e.App.SaveNoValidate(saved)
 		}
 	}
@@ -455,10 +499,10 @@ func callsRoute(e *core.RequestEvent) error {
 		}
 		vars := []map[string]any{}
 		for _, v := range variablesOf(source) {
-			vars = append(vars, map[string]any{"name": v.Name, "required": v.Required, "api": true})
+			vars = append(vars, map[string]any{"name": v.Name, "required": v.Required, "default": v.Default, "api": true})
 		}
 		for _, v := range variablesOf(c) {
-			vars = append(vars, map[string]any{"name": v.Name, "required": v.Required})
+			vars = append(vars, map[string]any{"name": v.Name, "required": v.Required, "default": v.Default})
 		}
 		var sample struct {
 			Body any `json:"body"`
@@ -474,6 +518,7 @@ func callsRoute(e *core.RequestEvent) error {
 			"variables":   vars,
 			"outputs":     outputsOf(c),
 			"fields":      samplePaths(sample.Body),
+			"sample":      sample.Body, // the last test response (shortened), for the values of the picker
 		})
 	}
 	sort.Slice(list, func(i, j int) bool {
@@ -564,4 +609,67 @@ func command(app *pocketbase.PocketBase) *cobra.Command {
 	uninstall.Flags().BoolVar(&yes, "yes", false, "confirm the deletion")
 	cmd.AddCommand(uninstall)
 	return cmd
+}
+
+// hideQuerySecret returns the query of a preview without the API key of a
+// "query" sign-in.
+func hideQuerySecret(source *core.Record, q url.Values) url.Values {
+	out := url.Values{}
+	for k, v := range q {
+		out[k] = v
+	}
+	if source.GetString("auth") == "query" {
+		if name := source.GetString("auth_name"); out.Has(name) {
+			out.Set(name, "[hidden]")
+		}
+	}
+	return out
+}
+
+// firstError returns the message of the first field error of a validation.
+func firstError(err error) string {
+	if errs, ok := err.(validation.Errors); ok {
+		for field, e := range errs {
+			return field + ": " + e.Error()
+		}
+	}
+	return err.Error()
+}
+
+// errorHint explains the usual failures of a test in plain words.
+func errorHint(err error, status int, source *core.Record) string {
+	msg := ""
+	if err != nil {
+		msg = strings.ToLower(err.Error())
+	}
+	switch {
+	case strings.Contains(msg, "no such host"):
+		return "The server name wasn't found: check the address (and that this machine can reach the internet)."
+	case strings.Contains(msg, "connection refused"):
+		return "Nothing answers at this address: check the host and the port, and that the service is running."
+	case strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timeout"):
+		return "The API didn't answer in time: try again, or raise the timeout in the API settings."
+	case strings.Contains(msg, "certificate"):
+		return "The HTTPS certificate of the server isn't valid."
+	case strings.Contains(msg, "isn't valid json") || strings.Contains(msg, "isn't valid xml"):
+		return "The response doesn't match the chosen format: set the response format to Auto or Text."
+	}
+	switch {
+	case status == 401 || status == 403:
+		if a := source.GetString("auth"); a == "" || a == "none" {
+			return "The API refuses the request: it probably needs a sign-in (API settings → Sign-in)."
+		}
+		return "The API refuses the sign-in: check the key or token in the API settings (and its name for a header or parameter key)."
+	case status == 404:
+		return "Not found: check the path and the values of the variables in it."
+	case status == 405:
+		return "The API doesn't accept this method for this address (GET, POST...)."
+	case status == 429:
+		return "Too many requests: the API limits how often it can be called. Retries can help."
+	case status >= 500:
+		return "The API failed on its side: try again later, or turn on retries."
+	case status == 400 || status == 422:
+		return "The API refuses the content of the request: check the parameters and the body (Request tab)."
+	}
+	return ""
 }

@@ -43,6 +43,9 @@ func newEcho(t testing.TB) *echo {
 		e.last, e.lastBody = r, string(b)
 		ct, res, status := e.contentType, e.response, e.status
 		e.Unlock()
+		if strings.HasSuffix(r.URL.Path, "/unauthorized") {
+			status = http.StatusUnauthorized
+		}
 		w.Header().Set("Content-Type", ct)
 		w.WriteHeader(status)
 		w.Write([]byte(res))

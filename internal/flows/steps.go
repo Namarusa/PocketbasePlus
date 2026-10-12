@@ -233,6 +233,8 @@ func stepLoop(r *run, s Step) (any, any, error) {
 		list = list[:max]
 	}
 
+	r.sample.loop(s.Key, list)
+
 	prevItem, prevIndex := r.data["item"], r.data["index"]
 	defer func() {
 		r.data["item"], r.data["index"] = prevItem, prevIndex

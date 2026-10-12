@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -17,8 +18,34 @@ import (
 	"github.com/Namarusa/PocketbasePlus/internal/mail"
 )
 
-// a value that is exactly one variable reference, e.g. "{{ .steps.lookup.items }}"
-var singleVarRegex = regexp.MustCompile(`^\{\{\s*\.([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\s*\}\}$`)
+// a value that is exactly one variable reference, e.g. "{{ .steps.lookup.items }}",
+// or without the dot for the roots ("{{steps.lookup.items}}")
+var singleVarRegex = regexp.MustCompile(`^\{\{\s*(\.)?([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\s*\}\}$`)
+
+// roots are the data names usable without their dot: {{steps.api.body}},
+// {{upper item.name}}. ("now", "last" and "index" are also function names:
+// they keep the dot.)
+var roots = []string{"trigger", "steps", "item", "flow"}
+
+// singleVar returns the path of a value that is exactly one variable.
+func singleVar(s string) (string, bool) {
+	m := singleVarRegex.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return "", false
+	}
+	if m[1] == "" {
+		root, _, _ := strings.Cut(m[2], ".")
+		if !slices.Contains(roots, root) {
+			return "", false
+		}
+	}
+	return m[2], true
+}
+
+// normalize writes the roots used without their dot as data references.
+func normalize(src string) string {
+	return formula.Normalize(src, roots...)
+}
 
 // any template action inside a string
 var actionRegex = regexp.MustCompile(`\{\{(.*?)\}\}`)
@@ -31,15 +58,15 @@ var actionRegex = regexp.MustCompile(`\{\{(.*?)\}\}`)
 func resolveValue(v any, data map[string]any) (any, error) {
 	switch val := v.(type) {
 	case string:
-		if m := singleVarRegex.FindStringSubmatch(strings.TrimSpace(val)); m != nil {
-			return lookupPath(data, m[1]), nil
+		if path, ok := singleVar(val); ok {
+			return lookupPath(data, path), nil
 		}
 		if !strings.Contains(val, "{{") {
 			return val, nil
 		}
 		// a function giving a list or an object ({{where "stock" 0 .items}}):
 		// the list itself, e.g. for the "For each" steps
-		if out, ok, err := formula.Value(val, data); ok {
+		if out, ok, err := formula.Value(val, data, roots...); ok {
 			if err != nil {
 				return nil, err
 			}
@@ -103,7 +130,7 @@ func templateFuncs() map[string]any {
 }
 
 func renderString(src string, data map[string]any) (string, error) {
-	t, err := template.New("v").Funcs(templateFuncs()).Option("missingkey=zero").Parse(src)
+	t, err := template.New("v").Funcs(templateFuncs()).Option("missingkey=zero").Parse(normalize(src))
 	if err != nil {
 		return "", err
 	}
@@ -119,7 +146,7 @@ func validateTemplates(v any) error {
 	switch val := v.(type) {
 	case string:
 		if strings.Contains(val, "{{") {
-			_, err := template.New("v").Funcs(templateFuncs()).Parse(val)
+			_, err := template.New("v").Funcs(templateFuncs()).Parse(normalize(val))
 			return err
 		}
 	case map[string]any:

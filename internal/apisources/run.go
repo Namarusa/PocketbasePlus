@@ -12,14 +12,49 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Namarusa/PocketbasePlus/internal/flows"
+	"github.com/Namarusa/PocketbasePlus/internal/formula"
 	"github.com/Namarusa/PocketbasePlus/internal/httpcall"
 )
 
-// Variable is a value given to a call by the flow step ({{.vars.name}}).
+// Variable is a value given to a call by the flow step ({{name}}, or
+// {{.vars.name}}).
 type Variable struct {
-	Name     string `json:"name"`
-	Test     string `json:"test,omitempty"` // used by the Test button
+	Name string `json:"name"`
+	// Default is used by the Test button and when the flow gives no value
+	Default  string `json:"default,omitempty"`
+	Test     string `json:"test,omitempty"` // before the defaults: used by the Test button only
 	Required bool   `json:"required,omitempty"`
+}
+
+// reservedNames can't be written without .vars: the names of the functions
+// and the words of the templates ({{len}} is the function).
+var reservedNames = func() map[string]bool {
+	m := map[string]bool{"vars": true, "nil": true, "true": true, "false": true}
+	for _, w := range []string{"if", "else", "end", "range", "with", "define", "template", "block", "break", "continue",
+		"and", "call", "html", "index", "slice", "js", "len", "not", "or", "print", "printf", "println", "urlquery", "eq", "ne", "lt", "le", "gt", "ge"} {
+		m[w] = true
+	}
+	for name := range formula.Funcs() {
+		m[name] = true
+	}
+	return m
+}()
+
+// shortNames returns the variables usable without .vars.
+func shortNames(vars []Variable) []string {
+	var out []string
+	for _, v := range vars {
+		if !reservedNames[v.Name] {
+			out = append(out, v.Name)
+		}
+	}
+	return out
+}
+
+// expand writes the variables used without .vars ({{id}}, {{upper id}}) as
+// {{.vars.id}}, the form the escaping of the requests recognizes.
+func expand(tpl string, names []string) string {
+	return formula.RewriteNames(tpl, ".vars.", names...)
 }
 
 // Output is a named value of the response (a path in the parsed body).
@@ -44,8 +79,9 @@ func allVariables(source, call *core.Record) []Variable {
 // are hidden in the run logs like the secret).
 func signInVariables(source *core.Record) map[string]bool {
 	out := map[string]bool{}
+	names := shortNames(variablesOf(source))
 	for _, f := range []string{"secret", "username"} {
-		for _, m := range varRefRegex.FindAllStringSubmatch(source.GetString(f), -1) {
+		for _, m := range varRefRegex.FindAllStringSubmatch(expand(source.GetString(f), names), -1) {
 			out[m[1]] = true
 		}
 	}
@@ -78,29 +114,42 @@ func Call(ctx context.Context, app core.App, callID string, vars map[string]any)
 	return run(ctx, source, call, vars)
 }
 
-// run sends a call (saved or a draft being tested).
-func run(ctx context.Context, source, call *core.Record, vars map[string]any) (any, map[string]any, error) {
-	if vars == nil {
-		vars = map[string]any{}
+// prepare renders the request of a call: the defaults of the variables the
+// flow left empty, the required ones checked. input is what the run log shows.
+func prepare(source, call *core.Record, vars map[string]any) (input map[string]any, req httpcall.Request, secrets []string, err error) {
+	given := make(map[string]any, len(vars))
+	for k, v := range vars {
+		given[k] = v
+	}
+	for _, v := range allVariables(source, call) {
+		if isEmpty(given[v.Name]) && v.Default != "" {
+			given[v.Name] = v.Default
+		}
 	}
 	hidden := signInVariables(source)
-	shown := make(map[string]any, len(vars))
-	for k, v := range vars {
+	shown := make(map[string]any, len(given))
+	for k, v := range given {
 		if hidden[k] {
 			v = "[hidden]"
 		}
 		shown[k] = v
 	}
-	input := map[string]any{"api": source.GetString("name"), "call": call.GetString("name"), "vars": shown}
+	input = map[string]any{"api": source.GetString("name"), "call": call.GetString("name"), "vars": shown}
 	for _, v := range allVariables(source, call) {
-		if v.Required && isEmpty(vars[v.Name]) {
-			return input, nil, fmt.Errorf("the variable %q is required", v.Name)
+		if v.Required && isEmpty(given[v.Name]) {
+			return input, req, nil, fmt.Errorf("the variable %q is required: give it a value in the flow step (or a default value in the call)", v.Name)
 		}
 	}
-	req, logged, secrets, err := buildRequest(source, call, map[string]any{"vars": flows.ToPlain(vars)})
+	req, logged, secrets, err := buildRequest(source, call, map[string]any{"vars": flows.ToPlain(given)})
 	for k, v := range logged {
 		input[k] = v
 	}
+	return input, req, secrets, err
+}
+
+// run sends a call (saved or a draft being tested).
+func run(ctx context.Context, source, call *core.Record, vars map[string]any) (any, map[string]any, error) {
+	input, req, secrets, err := prepare(source, call, vars)
 	if err != nil {
 		return input, nil, err
 	}
@@ -159,6 +208,8 @@ func isEmpty(v any) bool {
 // secrets, to remove them from the errors.
 func buildRequest(source, call *core.Record, data map[string]any) (req httpcall.Request, logged map[string]any, secrets []string, err error) {
 	logged = map[string]any{}
+	names := shortNames(allVariables(source, call))
+	tpl := func(s string) string { return expand(s, names) }
 	req = httpcall.Request{
 		Method:      call.GetString("method"),
 		Headers:     map[string]string{},
@@ -190,19 +241,19 @@ func buildRequest(source, call *core.Record, data map[string]any) (req httpcall.
 	default:
 		src = base + "/" + strings.TrimLeft(path, "/")
 	}
-	u, err := flows.RenderURL(src, data)
+	u, err := flows.RenderURL(tpl(src), data)
 	if err != nil {
 		return req, logged, nil, fmt.Errorf("url: %w", err)
 	}
 	req.URL = u
 	logged["url"] = u
 
-	for k, tpl := range stringMap(call, "query") {
-		v, err := flows.RenderString(tpl, data)
+	for k, src := range stringMap(call, "query") {
+		v, err := flows.RenderString(tpl(src), data)
 		if err != nil {
 			return req, logged, nil, fmt.Errorf("query %s: %w", k, err)
 		}
-		if v == "" && strings.Contains(tpl, "{{") {
+		if v == "" && strings.Contains(src, "{{") {
 			continue // an optional parameter without a value
 		}
 		req.Query.Set(k, v)
@@ -212,8 +263,8 @@ func buildRequest(source, call *core.Record, data map[string]any) (req httpcall.
 	}
 
 	for _, rec := range []*core.Record{source, call} {
-		for k, tpl := range stringMap(rec, "headers") {
-			v, err := renderHeader(tpl, data)
+		for k, src := range stringMap(rec, "headers") {
+			v, err := renderHeader(tpl(src), data)
 			if err != nil {
 				return req, logged, nil, fmt.Errorf("header %s: %w", k, err)
 			}
@@ -224,18 +275,18 @@ func buildRequest(source, call *core.Record, data map[string]any) (req httpcall.
 	var body string
 	switch call.GetString("body_type") {
 	case "json":
-		body, err = flows.RenderJSONBody(call.GetString("body"), data)
+		body, err = flows.RenderJSONBody(tpl(call.GetString("body")), data)
 		req.ContentType = "application/json"
 	case "xml":
-		body, err = flows.RenderXMLBody(call.GetString("body"), data)
+		body, err = flows.RenderXMLBody(tpl(call.GetString("body")), data)
 		req.ContentType = "application/xml"
 	case "text":
-		body, err = flows.RenderString(call.GetString("body"), data)
+		body, err = flows.RenderString(tpl(call.GetString("body")), data)
 		req.ContentType = "text/plain; charset=utf-8"
 	case "form":
 		form := url.Values{}
-		for k, tpl := range stringMap(call, "form") {
-			v, rerr := flows.RenderString(tpl, data)
+		for k, src := range stringMap(call, "form") {
+			v, rerr := flows.RenderString(tpl(src), data)
 			if rerr != nil {
 				err = fmt.Errorf("%s: %w", k, rerr)
 				break
@@ -260,13 +311,13 @@ func buildRequest(source, call *core.Record, data map[string]any) (req httpcall.
 	auth := source.GetString("auth")
 	var secret, name, user string
 	if auth != "" && auth != "none" {
-		if secret, err = renderHeader(source.GetString("secret"), data); err != nil {
+		if secret, err = renderHeader(tpl(source.GetString("secret")), data); err != nil {
 			return req, logged, nil, fmt.Errorf("secret: %w", err)
 		}
-		if user, err = renderHeader(source.GetString("username"), data); err != nil {
+		if user, err = renderHeader(tpl(source.GetString("username")), data); err != nil {
 			return req, logged, nil, fmt.Errorf("username: %w", err)
 		}
-		if name, err = renderHeader(source.GetString("auth_name"), data); err != nil {
+		if name, err = renderHeader(tpl(source.GetString("auth_name")), data); err != nil {
 			return req, logged, nil, fmt.Errorf("key name: %w", err)
 		}
 		if (auth == "header" || auth == "query") && !headerRegex.MatchString(name) {

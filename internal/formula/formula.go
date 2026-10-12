@@ -266,6 +266,13 @@ func cleanError(err error) error {
 // ({{upper record.name}}: {{upper $.record.name}}, also right inside a
 // range), outside the quoted texts.
 func Normalize(src string, roots ...string) string {
+	return RewriteNames(src, "$.", roots...)
+}
+
+// RewriteNames writes the given names used alone inside the actions (not
+// after a dot, outside the quoted texts) with a prefix: the variables of the
+// API calls, {{id}} written {{.vars.id}}.
+func RewriteNames(src, prefix string, roots ...string) string {
 	if len(roots) == 0 || !strings.Contains(src, "{{") {
 		return src
 	}
@@ -287,7 +294,7 @@ func Normalize(src string, roots ...string) string {
 			b.WriteString(src)
 			return b.String()
 		}
-		b.WriteString(prefixRoots(src[:end], isRoot))
+		b.WriteString(prefixRoots(src[:end], isRoot, prefix))
 		b.WriteString("}}")
 		src = src[end+2:]
 	}
@@ -329,7 +336,7 @@ func actionEnd(s string) int {
 	return -1
 }
 
-func prefixRoots(action string, isRoot map[string]bool) string {
+func prefixRoots(action string, isRoot map[string]bool, prefix string) string {
 	var b strings.Builder
 	for i := 0; i < len(action); {
 		c := action[i]
@@ -363,7 +370,7 @@ func prefixRoots(action string, isRoot map[string]bool) string {
 				prev = action[i-1]
 			}
 			if isRoot[word] && prev != '.' && prev != '$' && (j == len(action) || !isIdentPart(action[j])) {
-				b.WriteString("$.")
+				b.WriteString(prefix)
 			}
 			b.WriteString(word)
 			i = j

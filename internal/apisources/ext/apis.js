@@ -3,6 +3,7 @@
 // tested here and run by the "API call" step of the flows.
 
 import { api, bare, field, handleError, page, select, sidebar } from "../pocketbaseplus/lib.js";
+import { namesReady, parseCurl, splitURL, templateNames, varNameFor } from "./assist.js";
 
 const base = app.pb.buildURL("/_/extensions/pocketbaseplus-apis/");
 if (!document.querySelector(`link[href="${base}apis.css"]`)) {
@@ -194,6 +195,18 @@ function openSourceModal(existing = null) {
         isSaving: false,
     });
     const vars = varInserter();
+    // the variables of the API's fields, added as they're typed
+    const templates = () => [data.base_url, data.auth_name, data.username, data.secret, ...data.headers.map((h) => h.v)];
+    const usedNames = () => {
+        const used = new Set();
+        templates().forEach((src) => templateNames(src).forEach((n) => used.add(n)));
+        // a secret stored with variables: those are used
+        for (const m of String(existing?.secret_hint || "").matchAll(/\{\{\.vars\.([A-Za-z0-9_]+)\}\}/g)) {
+            used.add(m[1]);
+        }
+        return used;
+    };
+    const watcher = autoVariables(data, templates, () => [], () => [data.base_url]);
 
     async function save() {
         data.isSaving = true;
@@ -290,9 +303,9 @@ function openSourceModal(existing = null) {
                     t.label({ className: "gp-label" }, "Variables"),
                     t.div(
                         { className: "field-help m-b-5" },
-                        "Values given by the flow step to every call of the API, usable in the base address, the headers and the sign-in (the { } button inserts one in the last field you clicked).",
+                        "Values given by the flow step to every call of the API: type {{name}} in the base address, the headers or the sign-in and the variable is added here (the { } button inserts one in the last field you clicked).",
                     ),
-                    variablesEditor(data, vars.insert, "No variables."),
+                    variablesEditor(data, vars.insert, "No variables: type {{name}} in a field to add one.", () => [], usedNames),
                 ),
                 t.div(
                     { className: "col-lg-12" },
@@ -315,7 +328,10 @@ function openSourceModal(existing = null) {
             t.button({ type: "submit", "html-form": "gpAPISourceForm", className: () => `btn expanded ${data.isSaving ? "loading" : ""}`, disabled: () => data.isSaving }, t.span({ className: "txt" }, existing ? "Save" : "Create")),
         ),
     );
-    modal.onafterclose = () => modal.remove();
+    modal.onafterclose = () => {
+        watcher.unwatch();
+        modal.remove();
+    };
     document.body.appendChild(modal);
     app.modals.open(modal);
 }
@@ -340,15 +356,29 @@ function randomId() {
     return Math.random().toString(36).slice(2, 10);
 }
 
-function pairsEditor(obj, prop, { keyPlaceholder = "name", valuePlaceholder = "value", addLabel = "Add", tpl = false } = {}) {
+// toVariable(p): the "make it a variable" button of the rows with a fixed value
+function pairsEditor(obj, prop, { keyPlaceholder = "name", valuePlaceholder = "value", addLabel = "Add", tpl = false, toVariable = null } = {}) {
     return t.div(
         { className: "gp-kv" },
         () =>
             obj[prop].map((p) =>
                 t.div(
-                    { rid: "kv_" + p.id, className: "gp-kv-row" },
+                    { rid: "kv_" + p.id, className: `gp-kv-row ${toVariable ? "gp-kv-row-var" : ""}` },
                     bare(t.input({ type: "text", className: "txt-code", placeholder: keyPlaceholder, value: () => p.k, oninput: (e) => (p.k = e.target.value) })),
                     bare(t.input({ type: "text", className: `${tpl ? "gp-api-tpl" : ""}`, placeholder: valuePlaceholder, value: () => p.v, oninput: (e) => (p.v = e.target.value) })),
+                    toVariable
+                        ? t.button(
+                            {
+                                type: "button",
+                                className: "btn xs secondary transparent",
+                                hidden: () => !p.v || p.v.includes("{{") || !p.k.trim(),
+                                title: () => `Make it a variable: {{${varNameFor(p.k)}}}, with "${p.v}" as default value (the flows can then give another value)`,
+                                onclick: () => toVariable(p),
+                            },
+                            t.i({ className: "ri-braces-line", ariaHidden: true }),
+                            t.span({ className: "txt" }, "Variable"),
+                        )
+                        : null,
                     t.button(
                         { type: "button", className: "btn sm circle transparent danger", ariaLabel: app.attrs.tooltip("Remove"), onclick: () => (obj[prop] = obj[prop].filter((x) => x.id != p.id)) },
                         t.i({ className: "ri-close-line", ariaHidden: true }),
@@ -378,6 +408,7 @@ export function pageCall(route) {
         call: emptyCall(route.query?.api?.[0] || route.query?.api || ""),
         original: "",
         test: { running: false, result: null, tab: "fields", count: 0 },
+        preview: null, // the request as it will be sent (dry run with the default values)
     });
 
     function emptyCall(source) {
@@ -450,7 +481,7 @@ export function pageCall(route) {
             // the last test response feeds the field picker of the flow editor
             const r = data.test.result;
             if (r && !r.error && r.status) {
-                body.sample = { format: r.format, body: prune(r.body, 3, 200) };
+                body.sample = { format: r.format, body: prune(r.body, 20, 300) };
             }
             if (!body.name) {
                 body.name = `${body.method} ${body.path || "/"}`.slice(0, 100);
@@ -507,8 +538,125 @@ export function pageCall(route) {
         data.test.running = false;
     }
 
+    const source = () => sourceOf(data.call.source);
     const vars = varInserter();
     const insertVar = vars.insert;
+
+    // --- less typing: variables found in the templates, values made variables,
+    // pasted addresses and cURL commands, the request previewed as it's edited
+
+    const apiVarNames = () => (source()?.variables || []).map((v) => v.name);
+    const callTemplates = () => {
+        const c = data.call;
+        return [c.path, ...c.query.map((p) => p.v), ...c.headers.map((p) => p.v), c.body_type == "form" ? "" : c.body, ...c.form.map((p) => p.v)];
+    };
+    const usedNames = () => {
+        const used = new Set();
+        callTemplates().forEach((src) => templateNames(src).forEach((n) => used.add(n)));
+        return used;
+    };
+    const autoWatcher = autoVariables(data.call, callTemplates, apiVarNames, () => [data.call.path]);
+
+    // a fixed value of a parameter, header or form field becomes a variable
+    // (its value is the default): the flows can then give another one
+    function toVariable(p) {
+        let name = varNameFor(p.k);
+        const taken = new Set([...data.call.variables.map((v) => v.name), ...apiVarNames()]);
+        for (let n = 2; taken.has(name); n++) {
+            name = varNameFor(p.k) + "_" + n;
+        }
+        data.call.variables = [...data.call.variables, { id: randomId(), name, default: p.v, required: false }];
+        p.v = `{{${name}}}`;
+        app.toasts.success(`Added the variable "${name}" (default value: the previous one).`);
+    }
+
+    // a full address pasted in the path: split into the path and the parameters
+    function applyAddress(text) {
+        const parts = splitURL(text, source()?.base_url);
+        if (!parts) {
+            return false;
+        }
+        const c = data.call;
+        c.path = parts.path;
+        if (parts.query.length) {
+            const rows = c.query.filter((r) => r.k.trim() && !parts.query.some(([k]) => k == r.k));
+            c.query = [...rows, ...parts.query.map(([k, v]) => ({ id: randomId(), k, v }))];
+        }
+        const notes = [];
+        if (parts.query.length) {
+            notes.push(`${parts.query.length} query parameter${parts.query.length > 1 ? "s" : ""} added below (the "Variable" button makes a value change with each run)`);
+        }
+        if (!parts.inBase) {
+            notes.push("the address isn't under the base address of the API: it's kept whole");
+        }
+        app.toasts.info(notes.length ? "Split the address: " + notes.join("; ") + "." : "Split the address.");
+        return true;
+    }
+
+    function openCurlModal() {
+        const st = store({ text: "" });
+        const apply = () => {
+            const r = parseCurl(st.text);
+            if (!r) {
+                app.toasts.error("Paste a command starting with curl and an address.");
+                return;
+            }
+            const c = data.call;
+            c.method = r.method;
+            applyAddress(r.url) || (c.path = r.url);
+            c.headers = [...c.headers.filter((h) => h.k.trim()), ...r.headers.map(([k, v]) => ({ id: randomId(), k, v }))];
+            if (r.bodyType != "none") {
+                c.body_type = r.bodyType;
+                c.body = r.body;
+                c.form = r.form.map(([k, v]) => ({ id: randomId(), k, v }));
+            }
+            app.modals.close(modal);
+            if (r.authorization || r.user) {
+                app.toasts.info("The command signs in: set the token or password in the API settings (Sign-in), not in the call.");
+            }
+        };
+        const modal = t.div(
+            { className: "modal popup gp-api-modal" },
+            t.header({ className: "modal-header" }, t.h5({ className: "m-auto" }, "Import a cURL command")),
+            t.div(
+                { className: "modal-content" },
+                t.p({ className: "txt-hint m-b-sm" }, "Paste a command copied from the documentation of the API or from the browser (Network tab → Copy as cURL): its method, address, headers and body fill the call."),
+                field({ name: "curl" }, t.textarea({ name: "curl", rows: 8, className: "txt-code", placeholder: "curl -X POST https://api.example.com/v1/items -H 'Content-Type: application/json' -d '{\"name\":\"Pen\"}'", value: () => st.text, oninput: (e) => (st.text = e.target.value), onmount: (el) => setTimeout(() => el.focus(), 50) })),
+            ),
+            t.footer(
+                { className: "modal-footer" },
+                t.button({ type: "button", className: "btn transparent secondary m-r-auto", onclick: () => app.modals.close(modal) }, t.span({ className: "txt" }, "Cancel")),
+                t.button({ type: "button", className: "btn expanded", onclick: apply }, t.span({ className: "txt" }, "Import")),
+            ),
+        );
+        modal.onafterclose = () => modal.remove();
+        document.body.appendChild(modal);
+        app.modals.open(modal);
+    }
+
+    // the request as it will be sent, rendered by the server (same escaping)
+    let previewTimer;
+    let previewSeq = 0;
+    const previewWatcher = watch(() => JSON.stringify([payload(), data.call.source, source()?.updated]), () => {
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(async () => {
+            if (!data.call.source || (!data.call.path && !source()?.base_url)) {
+                data.preview = null;
+                return;
+            }
+            const n = ++previewSeq;
+            try {
+                const res = await api("/api/apisources/test", { method: "POST", body: { source: data.call.source, call: payload(), dryRun: true }, requestKey: null });
+                if (n == previewSeq) {
+                    data.preview = res;
+                }
+            } catch (err) {
+                if (!err?.isAbort && n == previewSeq) {
+                    data.preview = { error: err?.response?.message || String(err) };
+                }
+            }
+        }, 500);
+    });
 
     function addOutput(path) {
         const parts = path.split(".").filter((p) => !/^\d+$/.test(p));
@@ -533,7 +681,6 @@ export function pageCall(route) {
         data.original = JSON.stringify(payload());
     }
 
-    const source = () => sourceOf(data.call.source);
 
     return page(
         {
@@ -558,7 +705,16 @@ export function pageCall(route) {
                 return t.div({ rid: "loading", className: "block txt-center" }, t.span({ className: "loader lg" }));
             }
             return t.div(
-                { rid: "editor", className: "gp-api-editor", onmount: (el) => el.addEventListener("focusin", vars.track) },
+                {
+                    rid: "editor",
+                    className: "gp-api-editor",
+                    onmount: (el) => el.addEventListener("focusin", vars.track),
+                    onunmount: () => {
+                        autoWatcher.unwatch();
+                        previewWatcher.unwatch();
+                        clearTimeout(previewTimer);
+                    },
+                },
                 t.div({ className: "gp-api-form" }, callForm()),
                 t.div({ className: "gp-api-test" }, testPanel()),
             );
@@ -581,10 +737,15 @@ export function pageCall(route) {
                 t.div({ className: "col-lg-12" }, field({ label: "Description", name: "description" }, t.input({ id: "description", name: "description", type: "text", placeholder: "What the call does (shown in the flow editor)", value: () => c.description, oninput: (e) => (c.description = e.target.value) }))),
             ),
 
-            section("Request"),
+            t.div(
+                { className: "gp-api-section gp-api-section-row" },
+                t.h6(null, "Request"),
+                t.button({ type: "button", className: "btn xs secondary transparent", onclick: openCurlModal }, t.i({ className: "ri-terminal-box-line", ariaHidden: true }), t.span({ className: "txt" }, "Import cURL")),
+            ),
             t.div(
                 { className: "gp-api-url" },
-                t.div({ className: "gp-api-url-method" }, field({ name: "method" }, select({ name: "method", required: true, options: methods, value: () => c.method, onchange: (v) => (c.method = v || "GET") }))),
+                // rebuilt with its value: an import (cURL) changes it from the code
+                () => t.div({ rid: "method_" + c.method, className: "gp-api-url-method" }, field({ name: "method" }, select({ name: "method", required: true, options: methods, value: () => c.method, onchange: (v) => (c.method = v || "GET") }))),
                 t.code({ className: "gp-api-url-base", title: "Base address of the API", hidden: () => !source()?.base_url }, () => (source()?.base_url || "") + "/"),
                 t.div(
                     { className: "gp-api-url-path" },
@@ -594,15 +755,39 @@ export function pageCall(route) {
                             name: "path",
                             type: "text",
                             className: "txt-code gp-api-tpl",
-                            placeholder: () => (source()?.base_url ? "customers/{{.vars.id}}" : "https://api.example.com/customers/{{.vars.id}}"),
+                            placeholder: () => (source()?.base_url ? "customers/{{id}}  (or paste a full address)" : "https://api.example.com/customers/{{id}}"),
                             value: () => c.path,
                             oninput: (e) => (c.path = e.target.value),
+                            onpaste: (e) => {
+                                const text = e.clipboardData?.getData("text") || "";
+                                if (e.target.value.trim() == "" || e.target.selectionStart == 0) {
+                                    if (applyAddress(text)) {
+                                        e.preventDefault();
+                                    }
+                                }
+                            },
                         }),
                     ),
                 ),
             ),
+            () => {
+                const p = data.preview;
+                if (!p) {
+                    return null;
+                }
+                return t.div(
+                    { rid: "preview_" + (p.url || "") + (p.error || ""), className: `gp-api-preview ${p.error ? "error" : ""}` },
+                    ...(p.error
+                        ? [t.i({ className: "ri-error-warning-line", ariaHidden: true }), t.span(null, p.error)]
+                        : [
+                            t.span({ className: "label sm" }, c.method || "GET"),
+                            t.code({ title: "The address sent with the default values of the variables" }, p.url),
+                            p.request?.body ? t.span({ className: "txt-hint txt-sm" }, "+ body") : null,
+                        ]),
+                );
+            },
 
-            section("Variables", "Values given by the flow step, with those of the API. Use them as {{.vars.name}} in the path, parameters, headers and body: they're escaped for their place."),
+            section("Variables", "Values given by the flow step, with those of the API. Type {{name}} in the path, parameters, headers or body and the variable is added here; its default value is used by Test and when the flow gives none. Values are escaped for their place."),
             () =>
                 source()?.variables?.length
                     ? t.div(
@@ -617,17 +802,17 @@ export function pageCall(route) {
                         ),
                     )
                     : null,
-            variablesEditor(c, insertVar, "No variables of its own: the call sends the same request each time.", () => (source()?.variables || []).map((v) => v.name)),
+            variablesEditor(c, insertVar, "No variables of its own: type {{name}} in a field (e.g. customers/{{id}}), or use the \"Variable\" button of a parameter.", () => (source()?.variables || []).map((v) => v.name), usedNames),
 
             section("Query parameters", "Added to the address. A parameter whose value is a variable is left out when the variable is empty."),
-            pairsEditor(c, "query", { keyPlaceholder: "name", addLabel: "Add parameter", tpl: true }),
+            pairsEditor(c, "query", { keyPlaceholder: "name", addLabel: "Add parameter", tpl: true, toVariable }),
             section("Headers", "In addition to the shared headers of the API and its sign-in."),
-            pairsEditor(c, "headers", { keyPlaceholder: "Header-Name", addLabel: "Add header", tpl: true }),
+            pairsEditor(c, "headers", { keyPlaceholder: "Header-Name", addLabel: "Add header", tpl: true, toVariable }),
 
             t.div(
                 { hidden: () => c.method == "GET" || c.method == "HEAD" },
                 section("Body"),
-                t.div({ className: "gp-api-narrow" }, field({ name: "body_type" }, select({ name: "body_type", required: true, options: bodyTypes, value: () => c.body_type, onchange: (v) => (c.body_type = v || "none") }))),
+                () => t.div({ rid: "bt_" + c.body_type, className: "gp-api-narrow" }, field({ name: "body_type" }, select({ name: "body_type", required: true, options: bodyTypes, value: () => c.body_type, onchange: (v) => (c.body_type = v || "none") }))),
                 t.div(
                     { hidden: () => !["json", "xml", "text"].includes(c.body_type) },
                     field(
@@ -642,7 +827,7 @@ export function pageCall(route) {
                         }),
                     ),
                 ),
-                t.div({ hidden: () => c.body_type != "form" }, pairsEditor(c, "form", { keyPlaceholder: "field", addLabel: "Add field", tpl: true })),
+                t.div({ hidden: () => c.body_type != "form" }, pairsEditor(c, "form", { keyPlaceholder: "field", addLabel: "Add field", tpl: true, toVariable })),
             ),
 
             section("Response"),
@@ -715,7 +900,7 @@ export function pageCall(route) {
             ),
             t.div(
                 { className: "field-help m-b-sm" },
-                () => (data.call.variables.length ? "Uses the test values of the variables and the call as edited (saving isn't needed)." : "Sends the call as edited (saving isn't needed)."),
+                () => (data.call.variables.length ? "Uses the default values of the variables and the call as edited (saving isn't needed)." : "Sends the call as edited (saving isn't needed)."),
             ),
             () => {
                 const r = data.test.result;
@@ -732,6 +917,7 @@ export function pageCall(route) {
                         r.attempts > 1 ? t.span({ className: "txt-hint txt-sm" }, `${r.attempts} attempts`) : null,
                     ),
                     r.error ? t.div({ className: "alert danger m-b-sm" }, r.error) : null,
+                    r.hint ? t.div({ className: "alert info m-b-sm" }, t.i({ className: "ri-lightbulb-line", ariaHidden: true }), " ", r.hint) : null,
                     t.div(
                         { className: "gp-tabs m-b-sm" },
                         ...[
@@ -765,9 +951,23 @@ export function pageCall(route) {
     }
 
     function node(key, value, path) {
+        // a toggle: the field is an output (named value of the flows) or not
+        const isOutput = () => data.call.outputs.some((o) => o.path == path);
         const add = t.button(
-            { type: "button", className: "btn xs secondary transparent gp-api-add", title: `Add ${path} to the outputs`, onclick: (e) => (e.preventDefault(), addOutput(path)) },
-            t.i({ className: "ri-add-line", ariaHidden: true }),
+            {
+                type: "button",
+                className: () => `btn xs transparent gp-api-add ${isOutput() ? "active" : "secondary"}`,
+                title: () => (isOutput() ? `Remove ${path} from the outputs` : `Add ${path} to the outputs`),
+                onclick: (e) => {
+                    e.preventDefault();
+                    if (isOutput()) {
+                        data.call.outputs = data.call.outputs.filter((o) => o.path != path);
+                    } else {
+                        addOutput(path);
+                    }
+                },
+            },
+            t.i({ className: () => (isOutput() ? "ri-checkbox-line" : "ri-checkbox-blank-line"), ariaHidden: true }),
         );
         if (value && typeof value == "object") {
             const count = Array.isArray(value) ? `[${value.length}]` : `{${Object.keys(value).length}}`;
@@ -806,17 +1006,21 @@ function varInserter() {
     };
 }
 
-/** Variables (name, test value, required) of an API or a call: obj.variables. */
-function variablesEditor(obj, insertVar, emptyText, taken = () => []) {
+/**
+ * Variables (name, default value, required) of an API or a call:
+ * obj.variables. used() → the names its templates use (the others are shown
+ * as unused).
+ */
+function variablesEditor(obj, insertVar, emptyText, taken = () => [], used = null) {
     return t.div(
         { className: "gp-kv" },
         () =>
             obj.variables.length
                 ? [
-                    t.div({ rid: "vhead", className: "gp-api-var-row gp-api-head" }, t.span(null, "Name"), t.span(null, "Test value"), t.span(null, "Required"), t.span()),
+                    t.div({ rid: "vhead", className: "gp-api-var-row gp-api-head" }, t.span(null, "Name"), t.span({ title: "Used by the Test button, and when the flow gives no value" }, "Default value"), t.span(null, "Required"), t.span()),
                     ...obj.variables.map((v) =>
                         t.div(
-                            { rid: "var_" + v.id, className: "gp-api-var-row" },
+                            { rid: "var_" + v.id, className: () => `gp-api-var-row ${used && v.name && namesReady() && !used().has(v.name) ? "unused" : ""}`, title: () => (used && v.name && namesReady() && !used().has(v.name) ? "Not used in the call: remove it, or insert it with the { } button" : "") },
                             bare(
                                 t.input({
                                     type: "text",
@@ -827,7 +1031,7 @@ function variablesEditor(obj, insertVar, emptyText, taken = () => []) {
                                     oninput: (e) => (v.name = e.target.value),
                                 }),
                             ),
-                            bare(t.input({ type: "text", placeholder: "value for the Test button", value: () => v.test, oninput: (e) => (v.test = e.target.value) })),
+                            bare(t.input({ type: "text", placeholder: "e.g. pikachu", value: () => v.default, oninput: (e) => (v.default = e.target.value) })),
                             t.div({ className: "field gp-checkbox" }, t.input({ type: "checkbox", id: "req_" + v.id, checked: () => !!v.required, onchange: (e) => (v.required = e.target.checked) }), t.label({ htmlFor: "req_" + v.id })),
                             t.div(
                                 { className: "gp-api-var-actions" },
@@ -853,7 +1057,7 @@ function variablesEditor(obj, insertVar, emptyText, taken = () => []) {
                     while (obj.variables.some((v) => v.name == "var" + n) || taken().includes("var" + n)) {
                         n++;
                     }
-                    obj.variables = [...obj.variables, { id: randomId(), name: "var" + n, test: "", required: false }];
+                    obj.variables = [...obj.variables, { id: randomId(), name: "var" + n, default: "", required: false }];
                 },
             },
             t.i({ className: "ri-add-line", ariaHidden: true }),
@@ -862,8 +1066,35 @@ function variablesEditor(obj, insertVar, emptyText, taken = () => []) {
     );
 }
 
-const toVariables = (list) => (list || []).map((v) => ({ id: randomId(), name: v.name, test: v.test || "", required: !!v.required }));
-const fromVariables = (list) => list.filter((v) => v.name.trim()).map((v) => ({ name: v.name.trim(), test: v.test, required: !!v.required }));
+// the "test" values of the calls saved before the defaults become their default
+const toVariables = (list) => (list || []).map((v) => ({ id: randomId(), name: v.name, default: v.default ?? v.test ?? "", required: !!v.required }));
+const fromVariables = (list) => list.filter((v) => v.name.trim()).map((v) => ({ name: v.name.trim(), default: v.default || "", required: !!v.required }));
+
+/**
+ * Adds the variables a template uses to obj.variables as they're typed
+ * ({{customer_id}} anywhere: a new row), except the names of other() (the
+ * API's). A variable of the path is required. Returns the watcher.
+ */
+function autoVariables(obj, sources, other = () => [], pathSources = () => []) {
+    let timer;
+    return watch(() => JSON.stringify(sources()), () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            if (!namesReady()) {
+                return;
+            }
+            const used = new Set();
+            sources().forEach((src) => templateNames(src).forEach((n) => used.add(n)));
+            const inPath = new Set();
+            pathSources().forEach((src) => templateNames(src).forEach((n) => inPath.add(n)));
+            const have = new Set([...obj.variables.map((v) => v.name), ...other()]);
+            const added = [...used].filter((n) => !have.has(n) && /^[A-Za-z_][A-Za-z0-9_]*$/.test(n));
+            if (added.length) {
+                obj.variables = [...obj.variables, ...added.map((n) => ({ id: randomId(), name: n, default: "", required: inPath.has(n) }))];
+            }
+        }, 600);
+    });
+}
 
 // shortens a response like the server does for the samples
 function prune(v, maxItems, maxText) {

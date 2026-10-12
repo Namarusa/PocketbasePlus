@@ -241,11 +241,37 @@ The extension is plain JavaScript using the dashboard globals (`t`, `store`, `wa
 ## Flows
 
 A flow has **one trigger** and a **list of steps**. Every step input accepts dynamic content (the ⚡ button):
-`{{.trigger.record.title}}`, `{{.steps.<key>.<field>}}`, `{{.item}}` inside loops, `{{.last}}`, `{{.now}}`.
-An input that holds exactly one variable keeps its type (a list stays a list), and so does a single function giving
-a list or an object (`{{where "stock" 0 .steps.api.body}}` can be the items of a *For each*); anything else is
-rendered as text. The ⚡ picker has a **Functions** tab with all the [functions](#functions): a picked function is
-inserted with its first argument selected, and a value picked next replaces it.
+`{{trigger.record.title}}`, `{{steps.<key>.<field>}}`, `{{item.name}}` inside loops, `{{.last}}`, `{{.now}}`
+(`trigger`, `steps`, `item` and `flow` can be written with or without the leading dot: `{{.steps.api.body}}` works
+too; `last`, `now` and `index` keep it, since they're also function names). An input that holds exactly one variable
+keeps its type (a list stays a list), and so does a single function giving a list or an object
+(`{{where "stock" 0 steps.api.body}}` can be the items of a *For each*); anything else is rendered as text. The ⚡
+picker has a **Functions** tab with all the [functions](#functions): a picked function is inserted with its first
+argument selected, and a value picked next replaces it.
+
+**Pick, don't type** (like Budibase's bindings):
+
+- **Test data**: *Run a test* (the bar above the trigger, or *Test run*) runs the flow and keeps its data: the trigger,
+  the first output of each step and the list of each *For each* (secrets hidden, lists cut to 50 items, long texts
+  cut; `flow_runs.sample`). The next test starts from the same trigger data. Before any run, an *API call* step uses
+  the last test response of its call.
+- **The ⚡ picker shows values**: each value of the data is listed with its value in the test data (`"Pikachu"`,
+  `list · 25 items`), and the responses of API calls, HTTP requests, scripts and variables open as a tree
+  (`response body › first item › name`). The search also looks inside them. A list has a **For each** button: a loop
+  over it is added and the step moves inside, where the picker lists the fields of "current item".
+- **Live result**: under each input, its result with the test data (`= PIKACHU (200)`, `= list · 25 items`), or what's
+  wrong: an unknown function, a step that doesn't exist or runs later ("did you mean steps.http?"), `item` outside a
+  *For each*, a missing `}}`. Results computed on a cut list say so. ⤢ opens a large editor with the data, the
+  functions and the live result.
+- **No expression needed** for the usual values:
+  - *For each* lists: a dropdown of the lists available at that step (records of *Get records*, lists of the
+    responses and of the trigger), or *Custom value*;
+  - the record of *Update/Delete record*: the ids in scope (trigger record and its relations, records created
+    before, current item, signed-in visitor), or *Custom value*;
+  - record fields: an input of the field's type (select options, yes/no, number, date with *Now* / *+1 day* /
+    *+7 days* / *+30 days*, a record of the related collection) or ⚡ dynamic content;
+  - conditions: when the left side is a select or yes/no field, its values are offered;
+  - *Get records* filter: *Add a condition* builds `field operator value` from the fields of the collection.
 
 - **Triggers:**
   - **Record event**: create/update/delete on a collection.
@@ -312,23 +338,39 @@ of Budibase or the API calls of FlutterFlow:
 - **An API** has a base address (`https://api.example.com/v1`), a sign-in (*Bearer token*, *Basic auth*, *API key in a
   header* or *in the query string*), shared headers and a timeout. The secret is entered once and stays on the
   server.
+- **Variables** are written `{{name}}` (or `{{.vars.name}}`, needed only when the name is also a function, like
+  `title`): type `{{customer_id}}` in a field and the variable is added to the list (a variable of the path is
+  required); the ones no field uses are struck out. Each has a **default value**, used by *Test the call* and when the
+  flow gives none.
 - **Variables of an API** are shared by its calls (like the API groups of FlutterFlow) and can be used anywhere in
-  its base address (`https://{{.vars.host}}/{{.vars.version}}`), shared headers and sign-in (username, key name,
-  secret: `{{.vars.token}}` for a token that a flow gets at run time). The values of the variables used by the sign-in
-  are hidden in the run logs. A call can't declare a variable with the name of one of its API's.
-- **A call** adds a method and a path (`customers/{{.vars.id}}`, or a full address when the API has none), query
-  parameters, headers and a body (JSON, form, XML or text) that use its **variables** and those of its API (`{{.vars.name}}`, required or not; a query parameter whose variable is
-  empty is left out). It chooses the response format, the retries, and its **outputs**: named values of the response
-  (`items.0.id`, `rss.channel.title`).
-- **Test the call** sends it as edited, with the test values of its variables, and shows the status, the time, the
-  parsed fields (a tree: click a field to add it as an output), the raw text, the headers and the request sent
-  (without the secret). The last test response is kept to list the response fields in the flow editor.
+  its base address (`https://{{host}}/{{version}}`), shared headers and sign-in (username, key name, secret:
+  `{{token}}` for a token that a flow gets at run time). The values of the variables used by the sign-in are hidden in
+  the run logs. A call can't declare a variable with the name of one of its API's.
+- **A call** adds a method and a path (`customers/{{id}}`, or a full address when the API has none), query
+  parameters, headers and a body (JSON, form, XML or text) that use its variables and those of its API (a query
+  parameter whose variable is empty is left out). It chooses the response format, the retries, and its **outputs**:
+  named values of the response (`items.0.id`, `rss.channel.title`), optional since the flow picker shows the whole
+  response.
+- **Less typing**:
+  - paste a full address in the path (`https://api.tcgdex.net/v2/fr/cards?name=pika`): it's split into the path
+    (without the base address of the API) and the query parameters;
+  - the **Variable** button of a parameter, header or form field makes its value a variable (`{{name}}`, with the
+    value as default) that each flow can change;
+  - **Import cURL** fills the method, the address, the headers and the body from a command copied from the
+    documentation or the browser (an `Authorization` header or `-u` goes to the sign-in of the API);
+  - under the address, **the request as it will be sent** with the default values (`GET
+    https://api.tcgdex.net/v2/fr/cards?name=pika`), rendered by the server with the same escaping.
+- **Test the call** sends it as edited, with the default values, and shows the status, the time, the parsed fields (a
+  tree: tick a field to make it an output), the raw text, the headers and the request sent (without the secret).
+  Usual failures are explained (wrong address, nothing answering, timeout, 401/403 sign-in, 404, 429, 5xx...). The
+  last test response is kept for the flow editor (fields, values, lists for a *For each*).
 - **Values in the address** are escaped as one path segment (`a/../b` can't change the path) or query value; a host
   with a port (`192.168.1.10:8080`) is kept as is. A variable at the very start of the address is the whole base
   address, inserted as written.
-- **The API call step** picks a call and maps flow values to its variables and those of its API. Its output has `data.<output>` for each
-  output, plus the whole response (`body`, `raw`, `status`, `ok`, `headers`). A 4xx/5xx answer fails the step unless
-  "Fail the step on error status" is off.
+- **The API call step** picks a call and maps flow values to its variables and those of its API (each shows its
+  default value). Its output has `data.<output>` for each output, plus the whole response (`body`, `raw`, `status`,
+  `ok`, `headers`); the lists of the last test response have a **For each** button. A 4xx/5xx answer fails the step
+  unless "Fail the step on error status" is off.
 - A call used by a flow can't be deleted, nor an API with calls. Flows are checked when saved: the call must exist
   and only its variables can be set.
 

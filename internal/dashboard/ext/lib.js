@@ -41,6 +41,16 @@ export function api(path, options = {}) {
 
 let collectionsCache = null;
 
+// the list is fetched again after a page change or a return to the tab: a
+// collection created in the native screens (or another tab) must show up
+// in the PocketBasePlus editors
+window.addEventListener("hashchange", () => (collectionsCache = null));
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState == "visible") {
+        collectionsCache = null;
+    }
+});
+
 /** All collections, cached for the page session. */
 export function allCollections(refresh = false) {
     if (refresh || !collectionsCache) {

@@ -128,6 +128,9 @@ type run struct {
 
 	// page actions: what the steps decide for the response
 	action *actionState
+
+	// test runs of the editor: the data kept for the variable picker
+	sample *sampleState
 }
 
 // Engine runs flows.
@@ -188,6 +191,7 @@ type RunOptions struct {
 	TriggerRecord *core.Record    // before record flows
 	Before        bool
 	Timeout       time.Duration
+	Sample        bool // keep the test data of the editor (flow_runs.sample)
 
 	action *actionState // page actions
 }
@@ -236,6 +240,9 @@ func (e *Engine) Run(flow *core.Record, trigger map[string]any, opts RunOptions)
 			"now":     time.Now().UTC().Format(time.RFC3339),
 		},
 	}
+	if opts.Sample {
+		r.sample = newSampleState()
+	}
 
 	var steps []Step
 	if err := json.Unmarshal([]byte(flow.GetString("steps")), &steps); err != nil && flow.GetString("steps") != "" {
@@ -277,6 +284,9 @@ func (e *Engine) finish(r *run, started time.Time, err error, deferSave bool) *R
 	rec.Set("output", truncate(redact(res.Output)))
 	rec.Set("error", limit(res.Error, 5000))
 	rec.Set("duration_ms", time.Since(started).Milliseconds())
+	if r.sample != nil {
+		rec.Set("sample", r.sample.build(r.data["trigger"]))
+	}
 
 	save := func() {
 		if err := e.app.Save(rec); err != nil {
@@ -407,6 +417,7 @@ func (r *run) runStep(s Step) error {
 	if s.Key != "" {
 		r.data["steps"].(map[string]any)[s.Key] = plain
 	}
+	r.sample.step(s.Key, plain)
 	r.data["last"] = plain
 
 	if err != nil && entry.Status == StatusFailed && s.ContinueOnError {

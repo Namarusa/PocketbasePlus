@@ -118,7 +118,7 @@ func renderJSONBody(v any, data map[string]any) (string, error) {
 	for i, l := range locs {
 		b.WriteString(src[last:l[0]])
 		last = l[1]
-		single := singleVarRegex.MatchString(actions[i])
+		_, single := singleVar(actions[i])
 		val, err := resolveValue(actions[i], data)
 		if err != nil {
 			return "", err

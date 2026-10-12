@@ -521,13 +521,23 @@ th .gp-checkbox {
 }
 .gp-expr .gp-expr-input {
     width: 100%;
-    padding-right: 38px;
+    padding-right: 64px;
 }
-.gp-expr-btn {
+.gp-expr-btns {
     position: absolute;
     top: 6px;
     right: 6px;
     z-index: 1;
+    display: flex;
+    gap: 2px;
+}
+.gp-expr-btns .btn:not(.gp-expr-btn) {
+    opacity: 0;
+    transition: opacity var(--animationSpeed);
+}
+.gp-expr:hover .gp-expr-btns .btn,
+.gp-expr:focus-within .gp-expr-btns .btn {
+    opacity: 1;
 }
 .gp-expr.open .gp-expr-btn {
     color: var(--primaryColor);
@@ -2762,4 +2772,233 @@ html:has(.gp-form-embed) {
 .gp-action-frame.gp-action-page {
     height: 360px;
     background: #fff;
+}
+
+/* a dropdown with a reload button (e.g. the collections of the flow steps) */
+.gp-with-reload {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+.gp-with-reload > :first-child {
+    flex: 1;
+    min-width: 0;
+}
+
+/* the data list of the pickers (bindings.js): values of the test data */
+.gp-data-line {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.gp-data-line .gp-picker-item {
+    flex: 1;
+    min-width: 0;
+}
+.gp-data-toggle,
+.gp-data-toggle-space {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 24px;
+}
+.gp-data-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--borderRadius);
+    background: none;
+    color: var(--surfaceTxtHintColor);
+    cursor: pointer;
+}
+.gp-data-toggle:hover {
+    background: var(--surfaceAlt2Color);
+    color: var(--surfaceTxtColor);
+}
+.gp-data-value {
+    font-family: var(--monospaceFontFamily);
+    font-size: calc(var(--smFontSize) - 1px);
+    color: var(--successColor);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 55%;
+}
+.gp-data-loop {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+/* the live result under the dynamic inputs */
+.gp-preview-line {
+    font-size: var(--smFontSize);
+    line-height: 1.4;
+    padding: 0 12px 5px;
+    min-width: 0;
+}
+.gp-binding-result .gp-preview-line {
+    padding: 0;
+}
+.gp-preview-line:empty {
+    display: none;
+}
+.gp-preview-line > span {
+    display: flex;
+    gap: 5px;
+    align-items: baseline;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gp-preview-value {
+    color: var(--surfaceTxtHintColor);
+    font-family: var(--monospaceFontFamily);
+}
+.gp-preview-eq {
+    color: var(--successColor);
+    font-weight: 600;
+}
+.gp-preview-error {
+    color: var(--dangerColor);
+    white-space: normal !important;
+}
+.gp-preview-warn {
+    color: var(--warningColor);
+    white-space: normal !important;
+}
+.gp-preview-hint {
+    color: var(--surfaceTxtHintColor);
+    font-style: italic;
+}
+
+/* where the test data comes from */
+.gp-testdata {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+    font-size: var(--smFontSize);
+}
+
+/* the large editor of a dynamic value */
+.gp-binding-modal {
+    width: min(1100px, 96vw);
+}
+.gp-binding-editor {
+    display: grid;
+    grid-template-columns: minmax(260px, 2fr) minmax(0, 3fr);
+    gap: 16px;
+    min-height: 420px;
+}
+.gp-binding-side {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    max-height: 60vh;
+    border-right: 1px solid var(--surfaceAlt2Color);
+    padding-right: 12px;
+}
+.gp-binding-side .gp-picker-list {
+    flex: 1;
+}
+.gp-binding-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.gp-binding-area {
+    width: 100%;
+    min-height: 200px;
+    resize: vertical;
+}
+.gp-binding-result {
+    padding: 8px 10px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+    min-height: 36px;
+}
+.gp-binding-result .gp-preview-line > span {
+    white-space: normal;
+}
+@media (max-width: 760px) {
+    .gp-binding-editor {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .gp-binding-side {
+        border-right: 0;
+        padding-right: 0;
+        max-height: 40vh;
+    }
+}
+
+/* a dropdown of suggested values, or a custom value (flow steps) */
+.gp-choice-custom {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+.gp-choice-custom > .gp-expr {
+    width: 100%;
+}
+.gp-choice .gp-preview-line {
+    padding: 2px 0 0;
+}
+
+/* a record field: an input of its type, or dynamic content */
+.gp-typed {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 0;
+}
+.gp-typed-input {
+    flex: 1;
+    min-width: 0;
+}
+.gp-typed > .btn {
+    margin-top: 6px;
+}
+.gp-date-input {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+.gp-date-input > .field {
+    flex: 1 1 200px;
+}
+
+/* "Add a condition" of the Get records filter */
+.gp-filter-builder {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) 130px minmax(160px, 2fr) auto auto;
+    gap: 6px;
+    align-items: start;
+    margin-top: 6px;
+    padding: 8px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+}
+@media (max-width: 760px) {
+    .gp-filter-builder {
+        grid-template-columns: 1fr 1fr;
+    }
+    .gp-filter-builder .gp-filter-value {
+        grid-column: 1 / -1;
+    }
+}
+
+/* the lists of an API call's response (API call step) */
+.gp-api-response {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
 }
