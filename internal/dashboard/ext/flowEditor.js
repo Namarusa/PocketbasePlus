@@ -3,10 +3,11 @@ import { describeTrigger, flowsSidebar, loadFlows, triggerTypes } from "./flows.
 import { aiModels, loadAI, modelTypes, openModelModal } from "./aiSettings.js";
 import { actionAt, functionList, functionSnippet, insertAt } from "./functions.js";
 import { closest, dataList, lookup, previewLine, previewQueue, valueSummary } from "./bindings.js";
+import { loadSecrets, looksSecret, openSecretModal, secretName, secretPicker, secretRef, secretsList } from "./secrets.js";
 
 // the data names usable without their dot ({{steps.api.body}}); "now", "last"
 // and "index" are also function names: they keep it (internal/flows/expr.go)
-const shortRoots = new Set(["trigger", "steps", "item", "flow"]);
+const shortRoots = new Set(["trigger", "steps", "item", "flow", "secret"]);
 
 // --- step catalog -----------------------------------------------------------------
 
@@ -254,6 +255,7 @@ export function pageFlowEditor(route) {
     async function load() {
         try {
             loadAI(); // shared AI models list (model picker of the AI steps)
+            loadSecrets(); // the secrets of the HTTP requests
             loadPagesAndRoles();
             loadAPICalls();
             const [cols, all, templates, flows] = await Promise.all([
@@ -704,6 +706,15 @@ export function pageFlowEditor(route) {
             if (!scope.loops.length && /(?:^|[^\w.$])\.?item\b/.test(code)) {
                 return `"item" is only available inside a For each`;
             }
+            for (const m of code.matchAll(/(?:^|[^\w.$])(?:\$?\.)?secret\.([A-Za-z0-9_]+)/g)) {
+                if (findStep(stepId)?.step.type != "http_request") {
+                    return "Secrets can only be used in HTTP requests (and the saved APIs)";
+                }
+                const known = secretsList();
+                if (known.length && !known.some((s) => s.name == m[1])) {
+                    return `No secret ${m[1]}: add it in Settings → Secrets`;
+                }
+            }
         }
         return "";
     }
@@ -758,6 +769,17 @@ export function pageFlowEditor(route) {
             if (items.length) {
                 groups.push({ name: s.name || stepTypes[s.type]?.label || s.key, icon: stepTypes[s.type]?.icon, items });
             }
+        }
+        // the secrets: only sent by the HTTP requests, never flow data
+        if (findStep(stepId)?.step.type == "http_request") {
+            const list = secretsList();
+            groups.push({
+                name: "Secrets",
+                icon: "ri-key-2-line",
+                items: list.length
+                    ? list.map((s) => ({ path: "secret." + s.name, label: s.description ? `${s.name} · ${s.description}` : s.name }))
+                    : [{ path: "secret.NAME", label: "no secrets yet: add them in Settings → Secrets" }],
+            });
         }
         groups.push({
             name: "Other",
@@ -1476,7 +1498,50 @@ export function pageFlowEditor(route) {
     }
 
     // free key/value editor stored as an object (keys renamed on change)
-    function kvEditor(parent, prop, stepId, { keyPlaceholder = "name", valuePlaceholder = "value", addLabel = "Add" } = {}) {
+    // a typed key of an HTTP request: "Move to Secrets" (keeps it out of the
+    // flow), or pick a secret
+    function kvSecret(obj, k, stepId) {
+        const use = (name) => {
+            const v = String(obj[k] ?? "");
+            // "Bearer xyz" moved: "Bearer {{secret.NAME}}"
+            const m = v.match(/^(Bearer|Basic|Token)\s+/i);
+            obj[k] = (m && !v.includes("{{") ? m[0] : "") + secretRef(name);
+        };
+        const suggest = () => {
+            const v = String(obj[k] ?? "");
+            const plain = v.includes("{{") ? "" : v.replace(/^(Bearer|Basic|Token)\s+/i, "");
+            // named after the site and the header: SHOP_EXAMPLE_TOKEN
+            const step = findStep(stepId)?.step;
+            let site = "";
+            try {
+                const host = new URL(String(step?.config?.url || "")).hostname;
+                if (!/^[\d.]+$|^localhost$|\[/.test(host)) {
+                    site = host.split(".").filter((p) => !/^(www|api|app)$/i.test(p)).slice(0, -1).join("_");
+                }
+            } catch {}
+            const what = /^authorization$/i.test(k) ? "TOKEN" : k;
+            return { name: secretName(site ? `${site}_${what}` : what), value: plain, description: step?.name ? `Used by the step "${step.name}"` : "" };
+        };
+        return t.div(
+            { className: "gp-kv-secret" },
+            () =>
+                looksSecret(k, obj[k])
+                    ? t.button(
+                        {
+                            rid: "move",
+                            type: "button",
+                            className: "btn xs warning transparent",
+                            ariaLabel: app.attrs.tooltip("This value is saved in the flow: keep it in Secrets instead (encrypted, hidden in the logs)"),
+                            onclick: () => openSecretModal({ ...suggest(), onsaved: (s) => use(s.name) }),
+                        },
+                        t.i({ className: "ri-key-2-line", ariaHidden: true }),
+                        t.span({ className: "txt" }, "Move to Secrets"),
+                    )
+                    : t.div({ rid: "pick" }, secretPicker({ onpick: use, suggest })),
+        );
+    }
+
+    function kvEditor(parent, prop, stepId, { keyPlaceholder = "name", valuePlaceholder = "value", addLabel = "Add", secrets = false } = {}) {
         if (!parent[prop] || typeof parent[prop] != "object") {
             parent[prop] = {};
         }
@@ -1506,6 +1571,7 @@ export function pageFlowEditor(route) {
                             }),
                         ),
                         bareExpr(parent[prop], k, stepId, { placeholder: valuePlaceholder }),
+                        secrets ? kvSecret(parent[prop], k, stepId) : null,
                         t.button(
                             {
                                 type: "button",
@@ -2538,9 +2604,9 @@ export function pageFlowEditor(route) {
                         t.div({ className: "col-lg-9" }, field({ label: "URL" }, exprInput(c, "url", sid, { placeholder: "https://example.com/api/hook", mono: true }))),
                     ),
                     t.label({ className: "gp-label" }, "Query parameters"),
-                    kvEditor(c, "query", sid, { keyPlaceholder: "name", addLabel: "Add parameter" }),
+                    kvEditor(c, "query", sid, { keyPlaceholder: "name", addLabel: "Add parameter", secrets: true }),
                     t.label({ className: "gp-label" }, "Headers"),
-                    kvEditor(c, "headers", sid, { keyPlaceholder: "Header-Name", addLabel: "Add header" }),
+                    kvEditor(c, "headers", sid, { keyPlaceholder: "Header-Name", addLabel: "Add header", secrets: true }),
                     () => (c.method == "GET" ? null : field({ label: "Body", hint: `JSON is detected automatically. Use {{json .some.value}} to insert a value as JSON.` }, exprInput(c, "body", sid, { multiline: true, rows: 5, mono: true, placeholder: '{"id": "{{.trigger.record.id}}"}' }))),
                     t.div({ className: "grid sm" },
                         t.div(

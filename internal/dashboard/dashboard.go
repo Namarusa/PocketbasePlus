@@ -20,6 +20,21 @@ import (
 // dashboardCSP is PocketBase's default dashboard policy (apis/serve.go, v0.40.4).
 const dashboardCSP = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http://127.0.0.1:* https://tile.openstreetmap.org data: blob:; connect-src 'self' http://127.0.0.1:* https://nominatim.openstreetmap.org; script-src 'self' http://127.0.0.1:*; frame-ancestors 'none'"
 
+// csp is the dashboard policy with the images it may show: a map tile server
+// set with POCKETBASEPLUS_MAP_TILES (e.g. on the local network), and the https
+// images of the records (the page builder shows them as the pages do), unless
+// the offline mode is on.
+func csp() string {
+	images := ""
+	if origin := offline.MapTilesOrigin(); origin != "" {
+		images += " " + origin
+	}
+	if !offline.Enabled() {
+		images += " https:"
+	}
+	return strings.Replace(dashboardCSP, "img-src 'self'", "img-src 'self'"+images, 1)
+}
+
 // Name is the extension name, its files are served at /_/extensions/{Name}/.
 const Name = "pocketbaseplus"
 
@@ -49,11 +64,9 @@ func Register(app core.App) {
 			if p == "/_/extensions.js" || strings.HasPrefix(p, "/_/extensions/"+Name+"/") {
 				e.Response.Header().Set("Cache-Control", "no-cache")
 			}
-			// a map tile server set with POCKETBASEPLUS_MAP_TILES (e.g. on the local
-			// network) must be allowed by the dashboard CSP (PocketBase only sets
-			// its default policy when none is set)
-			if origin := offline.MapTilesOrigin(); origin != "" && (p == "/_" || strings.HasPrefix(p, "/_/")) {
-				e.Response.Header().Set("Content-Security-Policy", strings.Replace(dashboardCSP, "img-src 'self'", "img-src 'self' "+origin, 1))
+			// PocketBase only sets its default policy when none is set
+			if p == "/_" || strings.HasPrefix(p, "/_/") {
+				e.Response.Header().Set("Content-Security-Policy", csp())
 			}
 			return e.Next()
 		})

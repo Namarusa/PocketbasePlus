@@ -23,6 +23,7 @@ import (
 	"github.com/Namarusa/PocketbasePlus/internal/pages"
 	"github.com/Namarusa/PocketbasePlus/internal/rbac"
 	"github.com/Namarusa/PocketbasePlus/internal/records"
+	"github.com/Namarusa/PocketbasePlus/internal/secrets"
 	"github.com/Namarusa/PocketbasePlus/internal/session"
 	_ "github.com/Namarusa/PocketbasePlus/migrations"
 )
@@ -59,6 +60,7 @@ func main() {
 	session.Register(app) // visitors signed in on the pages
 	activity.Register(app)
 	mailEngine := mail.Register(app)
+	secrets.Register(app) // keys of the flows, APIs and AI providers
 	ai.Register(app)
 	flowsEngine := flows.Register(app, mailEngine)
 	assistant.Register(app, mailEngine, flowsEngine)

@@ -14,6 +14,7 @@ import (
 	"github.com/Namarusa/PocketbasePlus/internal/flows"
 	"github.com/Namarusa/PocketbasePlus/internal/formula"
 	"github.com/Namarusa/PocketbasePlus/internal/httpcall"
+	"github.com/Namarusa/PocketbasePlus/internal/secrets"
 )
 
 // Variable is a value given to a call by the flow step ({{name}}, or
@@ -29,7 +30,7 @@ type Variable struct {
 // reservedNames can't be written without .vars: the names of the functions
 // and the words of the templates ({{len}} is the function).
 var reservedNames = func() map[string]bool {
-	m := map[string]bool{"vars": true, "nil": true, "true": true, "false": true}
+	m := map[string]bool{"vars": true, "secret": true, "nil": true, "true": true, "false": true}
 	for _, w := range []string{"if", "else", "end", "range", "with", "define", "template", "block", "break", "continue",
 		"and", "call", "html", "index", "slice", "js", "len", "not", "or", "print", "printf", "println", "urlquery", "eq", "ne", "lt", "le", "gt", "ge"} {
 		m[w] = true
@@ -111,12 +112,28 @@ func Call(ctx context.Context, app core.App, callID string, vars map[string]any)
 	if err != nil {
 		return nil, nil, errors.New("the API of the call doesn't exist anymore")
 	}
-	return run(ctx, source, call, vars)
+	return run(ctx, app, source, call, vars)
+}
+
+// secretsOf returns the secrets used by an API and a call ({{secret.NAME}}):
+// their values, or their names for the preview.
+func secretsOf(app core.App, source, call *core.Record, preview bool) (map[string]any, []string, error) {
+	var fields []any
+	for _, f := range []string{"base_url", "auth_name", "username", "secret", "headers"} {
+		fields = append(fields, source.GetString(f))
+	}
+	for _, f := range []string{"path", "query", "headers", "body", "form"} {
+		fields = append(fields, call.GetString(f))
+	}
+	if preview {
+		return secrets.Placeholders(fields), nil, nil
+	}
+	return secrets.Load(app, fields)
 }
 
 // prepare renders the request of a call: the defaults of the variables the
 // flow left empty, the required ones checked. input is what the run log shows.
-func prepare(source, call *core.Record, vars map[string]any) (input map[string]any, req httpcall.Request, secrets []string, err error) {
+func prepare(source, call *core.Record, vars, secretData map[string]any) (input map[string]any, req httpcall.Request, masked []string, err error) {
 	given := make(map[string]any, len(vars))
 	for k, v := range vars {
 		given[k] = v
@@ -140,24 +157,33 @@ func prepare(source, call *core.Record, vars map[string]any) (input map[string]a
 			return input, req, nil, fmt.Errorf("the variable %q is required: give it a value in the flow step (or a default value in the call)", v.Name)
 		}
 	}
-	req, logged, secrets, err := buildRequest(source, call, map[string]any{"vars": flows.ToPlain(given)})
+	data := map[string]any{"vars": flows.ToPlain(given)}
+	if secretData != nil {
+		data["secret"] = secretData
+	}
+	req, logged, masked, err := buildRequest(source, call, data)
 	for k, v := range logged {
 		input[k] = v
 	}
-	return input, req, secrets, err
+	return input, req, masked, err
 }
 
 // run sends a call (saved or a draft being tested).
-func run(ctx context.Context, source, call *core.Record, vars map[string]any) (any, map[string]any, error) {
-	input, req, secrets, err := prepare(source, call, vars)
+func run(ctx context.Context, app core.App, source, call *core.Record, vars map[string]any) (any, map[string]any, error) {
+	secretData, used, err := secretsOf(app, source, call, false)
 	if err != nil {
-		return input, nil, err
+		return nil, nil, err
+	}
+	input, req, hidden, err := prepare(source, call, vars, secretData)
+	hidden = append(hidden, used...)
+	if err != nil {
+		return secrets.MaskValue(input, hidden), nil, hideSecrets(err, hidden)
 	}
 
 	res, err := httpcall.Do(ctx, req)
-	err = hideSecrets(err, secrets)
+	err = hideSecrets(err, hidden)
 	if res == nil {
-		return input, nil, err
+		return secrets.MaskValue(input, hidden), nil, err
 	}
 	output := res.Output()
 	output["attempts"] = res.Attempts
@@ -167,6 +193,13 @@ func run(ctx context.Context, source, call *core.Record, vars map[string]any) (a
 		data[o.Name] = flows.LookupPath(res.Body, o.Path)
 	}
 	output["data"] = data
+	// a response may repeat a secret (an echo, an error page)
+	if len(hidden) > 0 {
+		for k, v := range output {
+			output[k] = secrets.MaskValue(v, hidden)
+		}
+		return secrets.MaskValue(input, hidden), output, err
+	}
 	return input, output, err
 }
 

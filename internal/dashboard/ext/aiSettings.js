@@ -2,6 +2,7 @@
 // the flows "AI decision" step.
 
 import { api, field, handleError, select } from "./lib.js";
+import { secretPicker, secretRef } from "./secrets.js";
 
 export const providerKinds = {
     typesafe: {
@@ -126,7 +127,7 @@ function settingsSidebar() {
     );
 }
 
-function settingsPage({ pbEvent, title, buttons }, ...content) {
+export function settingsPage({ pbEvent, title, buttons }, ...content) {
     return t.div(
         { pbEvent, className: "page gp-page" },
         settingsSidebar(),
@@ -174,11 +175,11 @@ function typeBadge(type) {
     return t.span({ className: `label sm gp-ai-type ${type == "system_one" ? "info" : ""}` }, t.i({ className: def?.icon, ariaHidden: true }), def?.label || type);
 }
 
-function emptyRow(cols, text, rid) {
+export function emptyRow(cols, text, rid) {
     return t.tr({ rid }, t.td({ colSpan: cols, className: "txt-hint txt-center p-sm" }, text));
 }
 
-function loadingRow(cols) {
+export function loadingRow(cols) {
     return t.tr({ rid: "loading" }, t.td({ colSpan: cols, className: "txt-center" }, t.span({ className: "loader" })));
 }
 
@@ -228,7 +229,9 @@ export function pageAIProviders() {
             { className: "txt-hint m-t-0" },
             "The accounts used by the AI features. Add a provider with its API key, then its models in ",
             t.a({ href: "#/settings/ai/models" }, "AI models"),
-            ". API keys are stored in the database and never sent back to the browser.",
+            ". API keys are never sent back to the browser: keep them in ",
+            t.a({ href: "#/settings/secrets" }, "Secrets"),
+            " to share one key and encrypt it.",
         ),
         t.div(
             { className: "gp-table-wrap" },
@@ -375,18 +378,28 @@ export function openProviderModal({ existing = null, kind = "typesafe", onsaved 
                                 "Create one at ",
                                 () => t.a({ href: providerKinds[data.kind].keyURL, target: "_blank", rel: "noopener noreferrer" }, providerKinds[data.kind].keyURL),
                                 existing?.key_hint ? ` · leave empty to keep the current key (${existing.key_hint})` : "",
+                                " · or pick a secret with the key button",
                             ),
                         },
-                        t.input({
-                            id: "api_key",
-                            name: "api_key",
-                            type: "password",
-                            autocomplete: "new-password",
-                            required: !existing?.key_hint,
-                            placeholder: existing?.key_hint ? "Unchanged" : "",
-                            value: () => data.api_key,
-                            oninput: (e) => (data.api_key = e.target.value),
-                        }),
+                        t.div(
+                            { className: "gp-api-secret" },
+                            t.input({
+                                id: "api_key",
+                                name: "api_key",
+                                // a secret's reference is shown
+                                type: () => (data.api_key.startsWith("{{") ? "text" : "password"),
+                                className: () => (data.api_key.startsWith("{{") ? "txt-code" : ""),
+                                autocomplete: "new-password",
+                                required: !existing?.key_hint,
+                                placeholder: existing?.key_hint ? "Unchanged" : "",
+                                value: () => data.api_key,
+                                oninput: (e) => (data.api_key = e.target.value),
+                            }),
+                            secretPicker({
+                                onpick: (name) => (data.api_key = secretRef(name)),
+                                suggest: () => ({ name: "AI_" + (data.name || providerKinds[data.kind].label).toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, ""), value: data.api_key.startsWith("{{") ? "" : data.api_key }),
+                            }),
+                        ),
                     ),
                 ),
                 t.div(

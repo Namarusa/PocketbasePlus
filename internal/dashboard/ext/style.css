@@ -494,6 +494,9 @@ th .gp-checkbox {
     gap: 6px;
     align-items: center;
 }
+.gp-kv-row:has(> .gp-kv-secret) {
+    grid-template-columns: 180px minmax(0, 1fr) auto auto;
+}
 .gp-link-col {
     display: flex;
     align-items: center;
@@ -510,7 +513,8 @@ th .gp-checkbox {
 @media (max-width: 700px) {
     .gp-rule-row,
     .gp-mapping-row,
-    .gp-kv-row {
+    .gp-kv-row,
+    .gp-kv-row:has(> .gp-kv-secret) {
         grid-template-columns: minmax(0, 1fr);
     }
 }
@@ -3001,4 +3005,55 @@ html:has(.gp-form-embed) {
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
+}
+
+/* secrets: a password input with buttons, the picker, the page */
+.gp-api-secret {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.gp-api-secret input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.gp-secret-picker {
+    display: inline-flex;
+    flex: none;
+}
+.gp-secret-dropdown {
+    min-width: 220px;
+    max-width: min(360px, calc(100vw - 32px));
+}
+.gp-secret-dropdown .dropdown-item {
+    flex-wrap: wrap;
+}
+.gp-secret-dropdown .dropdown-item small {
+    flex-basis: 100%;
+    padding-left: 22px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gp-secret-dropdown hr {
+    margin: 4px 0;
+}
+.gp-secret-name {
+    padding-left: 0;
+    gap: 6px;
+}
+.gp-secret-name i {
+    opacity: 0.5;
+}
+.gp-secrets-table td {
+    vertical-align: top;
+}
+@media (max-width: 700px) {
+    .gp-secrets-table th:nth-child(4),
+    .gp-secrets-table td:nth-child(4) {
+        display: none;
+    }
+}
+.gp-kv-secret {
+    flex: none;
 }

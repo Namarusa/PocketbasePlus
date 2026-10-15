@@ -23,6 +23,7 @@ export const internalCollections = new Set([
     "email_unsubscribes",
     "ai_settings",
     "ai_conversations",
+    "secrets",
     // collections of optional modules (e.g. Pages), added by their own extension main.js
     ...(globalThis.gpInternalCollections || []),
 ]);

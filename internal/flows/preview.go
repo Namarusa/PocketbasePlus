@@ -10,6 +10,8 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Namarusa/PocketbasePlus/internal/secrets"
 )
 
 // The live result of the editor's inputs: an expression evaluated with the
@@ -108,6 +110,10 @@ func (e *Engine) preview(re *core.RequestEvent) error {
 		data := previewData(sample, flow, b)
 		if item != nil && data["item"] == nil && len(loops) > 0 {
 			data["item"] = toPlain(item)
+		}
+		// the secrets show their name, never their value
+		if ph := secrets.Placeholders(expr); ph != nil {
+			data["secret"] = ph
 		}
 		out := map[string]any{}
 		v, err := resolveValue(expr, data)

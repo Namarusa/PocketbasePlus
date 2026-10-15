@@ -23,6 +23,7 @@ import (
 
 	"github.com/Namarusa/PocketbasePlus/internal/internalcols"
 	"github.com/Namarusa/PocketbasePlus/internal/mail"
+	"github.com/Namarusa/PocketbasePlus/internal/secrets"
 )
 
 const cronJobPrefix = "flow_"
@@ -495,6 +496,8 @@ func validateFlow(app core.App, f *core.Record) error {
 		errs["steps"] = validation.NewError("invalid_steps", err.Error())
 	} else if err := validateAPICallSteps(app, steps); err != nil {
 		errs["steps"] = validation.NewError("invalid_steps", err.Error())
+	} else if err := validateSecrets(app, steps); err != nil {
+		errs["steps"] = validation.NewError("invalid_steps", err.Error())
 	}
 	if steps == nil {
 		steps = []Step{}
@@ -503,6 +506,31 @@ func validateFlow(app core.App, f *core.Record) error {
 
 	if len(errs) > 0 {
 		return errs
+	}
+	return nil
+}
+
+// validateSecrets checks that the secrets are only used by the HTTP requests
+// (their values never become flow data) and exist.
+func validateSecrets(app core.App, steps []Step) error {
+	for _, s := range steps {
+		if len(secrets.Refs(s.Config)) > 0 {
+			label := s.Name
+			if label == "" {
+				label = s.Type
+			}
+			if s.Type != "http_request" {
+				return fmt.Errorf("step %q: %w", label, secrets.ErrNotHere)
+			}
+			if err := secrets.Check(app, s.Config); err != nil {
+				return fmt.Errorf("step %q: %w", label, err)
+			}
+		}
+		for _, nested := range [][]Step{s.Then, s.Else, s.Steps} {
+			if err := validateSecrets(app, nested); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

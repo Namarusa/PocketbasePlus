@@ -24,8 +24,8 @@ var singleVarRegex = regexp.MustCompile(`^\{\{\s*(\.)?([A-Za-z0-9_]+(?:\.[A-Za-z
 
 // roots are the data names usable without their dot: {{steps.api.body}},
 // {{upper item.name}}. ("now", "last" and "index" are also function names:
-// they keep the dot.)
-var roots = []string{"trigger", "steps", "item", "flow"}
+// they keep the dot.) "secret" only has data in the HTTP requests.
+var roots = []string{"trigger", "steps", "item", "flow", "secret"}
 
 // singleVar returns the path of a value that is exactly one variable.
 func singleVar(s string) (string, bool) {

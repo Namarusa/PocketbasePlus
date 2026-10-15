@@ -70,12 +70,15 @@ if (gpSettingsGroups && typeof gpSettingsGroups == "object") {
         }
     }
     groups.AI ||= aiLinks;
+    // Settings → Secrets, in the native "System" group (or with the AI links)
+    (groups.System || groups.AI).push({ href: "#/settings/secrets", icon: "ri-key-2-line", label: "Secrets" });
     app.store.settingsNavGroups = groups;
 } else {
     gpWarn("app.store.settingsNavGroups (AI settings link)");
 }
 app.routes.superuserOnly("#/settings/ai", async (route) => (await load("aiSettings.js")).pageAIProviders(route));
 app.routes.superuserOnly("#/settings/ai/models", async (route) => (await load("aiSettings.js")).pageAIModels(route));
+app.routes.superuserOnly("#/settings/secrets", async (route) => (await load("secrets.js")).pageSecrets(route));
 app.routes.superuserOnly("#/settings/ai/assistant", async (route) => (await load("aiSettings.js")).pageAIAssistant(route));
 
 // dashboards

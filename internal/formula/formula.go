@@ -225,7 +225,11 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 // Parse parses a formula ("Hello {{upper record.name}}"). Roots are the data
 // names that can be written without the leading dot (record, auth, query).
 func Parse(src string, roots ...string) (*template.Template, error) {
-	return template.New("formula").Funcs(Funcs()).Option("missingkey=zero").Parse(Normalize(src, roots...))
+	t, err := template.New("formula").Funcs(Funcs()).Option("missingkey=zero").Parse(Normalize(src, roots...))
+	if err != nil && strings.Contains(err.Error(), `function "secret" not defined`) {
+		return nil, ErrSecretHere
+	}
+	return t, err
 }
 
 // Execute runs a parsed formula; missing values are empty.
@@ -246,6 +250,10 @@ func Render(src string, data any, roots ...string) (string, error) {
 	return Execute(t, data)
 }
 
+// ErrSecretHere is the error of a secret ({{secret.NAME}}) used where its
+// value could be shown.
+var ErrSecretHere = errors.New("secrets can only be used in HTTP requests, saved APIs and AI providers")
+
 // cleanError drops the template name and position noise of the errors:
 // "template: formula:1:9: executing "formula" at <divide 1 0>: error calling
 // divide: division by zero" is "divide: division by zero".
@@ -253,7 +261,13 @@ func cleanError(err error) error {
 	if errors.Is(err, ErrTooLong) {
 		return ErrTooLong
 	}
+	if errors.Is(err, ErrSecretHere) {
+		return ErrSecretHere
+	}
 	msg := err.Error()
+	if strings.Contains(msg, `function "secret" not defined`) {
+		return ErrSecretHere
+	}
 	if i := strings.Index(msg, "error calling "); i >= 0 {
 		return errors.New(msg[i+len("error calling "):])
 	}

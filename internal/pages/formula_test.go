@@ -99,3 +99,31 @@ func TestFormulaPreviewRoute(t *testing.T) {
 	(&tests.ApiScenario{Name: "superusers only", Method: http.MethodPost, URL: "/api/pages/x/formula", Body: strings.NewReader(`{}`),
 		TestAppFactory: factory, ExpectedStatus: 401, ExpectedContent: []string{`"data":{}`}}).Test(t)
 }
+
+func TestDynamicValues(t *testing.T) {
+	f := setup(t)
+	item := `<article data-pb-item data-pb-style-color="{{if gt record.price 10}}green{{else}}red{{end}}" style="padding:4px">` +
+		`<img data-pb-field="name" data-pb-attr-src="https://cdn.test/{{lower record.name}}/high.webp" data-pb-attr-alt="{{record.name}} by {{record.brand.name}}">` +
+		`<a href="#" class="btn" data-pb-attr-href="/search?q={{urlquery record.name}}" data-pb-attr-class="tag-{{lower record.brand.name}} &lt;x&gt;">x</a>` +
+		`<a href="#" data-pb-attr-href="javascript:alert(1)">bad</a>` +
+		`<p data-pb-style-width="{{record.price}}%" data-pb-style-background-color="red;background:url(//evil.test)" data-pb-attr-onclick="x" data-pb-attr-title="">t</p>` +
+		`</article>`
+	out := f.render(t, `<body><div data-pb-list="products" data-pb-filter="id = '`+lampID+`'" data-pb-style-gap="{{query.gap}}px">`+item+`</div></body>`, scope{}, url.Values{"gap": {"8"}})
+	for _, want := range []string{
+		`style="gap:8px"`, // the list itself, with the page scope
+		`style="padding:4px;color:green"`,
+		`src="https://cdn.test/lamp &lt;b&gt;/high.webp"`,
+		`alt="Lamp &lt;b&gt; by Acme"`,
+		`href="/search?q=Lamp+%3Cb%3E"`,
+		`class="btn tag-acme x"`,       // added to the classes, cleaned
+		`<a>bad</a>`,                   // unsafe URL: no link
+		`<p style="width:12.5%">t</p>`, // unsafe style dropped, unknown attribute ignored
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "data-pb-") || strings.Contains(out, "evil") || strings.Contains(out, "onclick") {
+		t.Errorf("unexpected binding or unsafe value in\n%s", out)
+	}
+}

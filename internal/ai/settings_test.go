@@ -1,14 +1,17 @@
 package ai_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
 	"github.com/Namarusa/PocketbasePlus/internal/ai"
+	"github.com/Namarusa/PocketbasePlus/internal/secrets"
 	"github.com/Namarusa/PocketbasePlus/internal/testutil"
 )
 
@@ -61,4 +64,34 @@ func TestModelTestRoute(t *testing.T) {
 		s.URL = "/api/ai/models/" + model.Id + "/test"
 	}
 	s.Test(t)
+}
+
+func TestProviderKeyFromSecret(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Authorization") + r.Header.Get("X-Api-Key")
+		_, _ = w.Write([]byte(`{"model": "jev-1", "answers": {}}`))
+	}))
+	defer srv.Close()
+
+	app := testutil.NewApp(t)
+	secrets.Register(app)
+	ai.Register(app)
+	testutil.Create(t, app, secrets.Collection, map[string]any{"name": "AI_KEY", "value": "typesafe-key-123456"})
+	col, _ := app.FindCollectionByNameOrId("ai_providers")
+	bad := core.NewRecord(col)
+	bad.Load(map[string]any{"name": "Bad", "kind": "typesafe", "api_key": "{{secret.NOPE}}"})
+	if err := app.Save(bad); err == nil {
+		t.Error("expected an unknown secret error")
+	}
+	p := testutil.Create(t, app, "ai_providers", map[string]any{"name": "TypeSafe", "kind": "typesafe", "api_key": "{{secret.AI_KEY}}", "base_url": srv.URL})
+	m := testutil.Create(t, app, "ai_models", map[string]any{"name": "Jev", "type": "system_one", "provider": p.Id, "model": "jev-latest"})
+	model, err := ai.LoadModel(app, m.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = model.Decide(context.Background(), ai.Request{State: "hi", Questions: []ai.Question{{Key: "a", Type: ai.QuestionNoul, Instructions: "?"}}})
+	if !strings.Contains(got, "typesafe-key-123456") {
+		t.Errorf("the provider didn't get the key: %q", got)
+	}
 }

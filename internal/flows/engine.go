@@ -17,6 +17,7 @@ import (
 
 	"github.com/Namarusa/PocketbasePlus/internal/actor"
 	"github.com/Namarusa/PocketbasePlus/internal/mail"
+	"github.com/Namarusa/PocketbasePlus/internal/secrets"
 )
 
 const (
@@ -131,6 +132,9 @@ type run struct {
 
 	// test runs of the editor: the data kept for the variable picker
 	sample *sampleState
+
+	// the values of the secrets used by the steps, hidden in what follows
+	secrets []string
 }
 
 // Engine runs flows.
@@ -392,6 +396,11 @@ func (r *run) runStep(s Step) error {
 	r.logs = append(r.logs, entry)
 
 	input, output, err := handler(r, s)
+	if len(r.secrets) > 0 {
+		input = secrets.MaskValue(toPlain(input), r.secrets)
+		output = secrets.MaskValue(toPlain(output), r.secrets)
+		err = secrets.MaskError(err, r.secrets)
+	}
 
 	entry.Duration = time.Since(started).Milliseconds()
 	entry.Input = truncate(redact(input))

@@ -31,6 +31,7 @@ var names = map[string]bool{
 	"email_unsubscribes": true,
 	"ai_settings":        true,
 	"ai_conversations":   true,
+	"secrets":            true,
 }
 
 // Add declares the collections of an optional module (registered from its

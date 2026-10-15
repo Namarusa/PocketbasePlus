@@ -82,6 +82,8 @@ type renderer struct {
 	charts     int
 	related    map[relatedKey]*core.Record // records reached through relations (nil: not shown)
 	formulas   map[string]*template.Template
+	lists      *listState // pagination and search (paging.go)
+	pagerCSS   bool
 }
 
 // pageView is what's needed to render a page.
@@ -114,7 +116,14 @@ func render(ctx context.Context, app core.App, p pageView, query url.Values, pre
 	p.CSS += expandParts(app, body, preview)
 	sanitize(body)
 	r := &renderer{app: app, ctx: ctx, query: query, preview: preview, budget: maxRecords, visitor: p.Visitor, info: p.Visitor.requestInfo(), path: p.Path, flash: p.Flash}
+	r.scanLists(body)
 	r.walk(body, p.Scope, 0)
+	if r.pagerCSS {
+		p.CSS += pagerCSS
+		if p.Kit == nil {
+			p.CSS += pagerPlainCSS
+		}
+	}
 	if r.flash != nil {
 		if !r.flashShown {
 			box := flashNode(r.flash)
@@ -198,6 +207,12 @@ func find(n *xhtml.Node, match func(*xhtml.Node) bool) *xhtml.Node {
 
 func (r *renderer) walk(n *xhtml.Node, s scope, depth int) {
 	if n.Type == xhtml.ElementNode {
+		if hasAttr(n, attrConditions) && !r.conditions(n, s) {
+			if n.Parent != nil {
+				n.Parent.RemoveChild(n)
+			}
+			return
+		}
 		if hasAttr(n, attrVisible) && !r.visitor.matches(getAttr(n, attrVisible)) {
 			if n.Parent != nil {
 				n.Parent.RemoveChild(n)
@@ -221,9 +236,15 @@ func (r *renderer) walk(n *xhtml.Node, s scope, depth int) {
 			return
 		}
 		if getAttr(n, attrList) != "" {
+			if hasDynamic(n) {
+				r.dynamic(n, s)
+			}
 			r.list(n, s, depth)
 			removeBindingAttrs(n)
 			return
+		}
+		if hasAttr(n, attrSearch) && n.DataAtom == atom.Form {
+			r.searchForm(n)
 		}
 		if slug := getAttr(n, attrForm); slug != "" {
 			setAttr(n, "src", "/f/"+url.PathEscape(slug)+"/embed")
@@ -250,6 +271,9 @@ func (r *renderer) walk(n *xhtml.Node, s scope, depth int) {
 		}
 		if path := getAttr(n, attrHref); path != "" {
 			r.href(n, s, path)
+		}
+		if hasDynamic(n) {
+			r.dynamic(n, s)
 		}
 		removeBindingAttrs(n)
 		if replaced {
@@ -302,10 +326,41 @@ func (r *renderer) list(n *xhtml.Node, s scope, depth int) {
 
 	filter, params := r.bind(getAttr(n, attrFilter), s)
 	rules := getAttr(n, attrAccess) == "rules" && !r.visitor.all
-	records, err := r.find(col, filter, getAttr(n, attrSort), limit, params, rules)
+	// pagination and search of the top level lists (paging.go)
+	key, mode := listKey(n), getAttr(n, attrPaginate)
+	if depth > 0 || (mode != "pages" && mode != "more") {
+		mode = ""
+	}
+	if depth == 0 {
+		if search := r.searchFilter(col, key, params); search != "" {
+			if strings.TrimSpace(filter) != "" {
+				filter = "(" + filter + ") && (" + search + ")"
+			} else {
+				filter = search
+			}
+		}
+	}
+	page, count, offset := 1, limit, 0
+	switch mode {
+	case "pages":
+		page = r.pageOf(key)
+		offset = (page - 1) * limit
+	case "more":
+		page = r.pageOf(key)
+		count = min(limit*page, r.budget)
+	}
+	records, err := r.find(col, filter, getAttr(n, attrSort), count, offset, params, rules)
 	if err != nil {
 		r.fail(n, err.Error())
 		return
+	}
+	if mode != "" {
+		total, err := r.count(col, filter, params, rules)
+		if err != nil {
+			r.fail(n, err.Error())
+			return
+		}
+		defer r.pager(n, key, mode, page, limit, total)
 	}
 	r.budget -= len(records)
 	scopes := make([]scope, len(records))
@@ -339,13 +394,45 @@ func listCollection(app core.App, name string) (*core.Collection, error) {
 // ({{query.x}}). Without rules the page is the access gate (like forms); with
 // rules the collection's list rule is applied for the visitor, as the REST API
 // does, and the fields they can't read are hidden.
-func (r *renderer) find(col *core.Collection, filter, sort string, limit int, params dbx.Params, rules bool) ([]*core.Record, error) {
+func (r *renderer) find(col *core.Collection, filter, sort string, limit, offset int, params dbx.Params, rules bool) ([]*core.Record, error) {
 	if rules && col.ListRule == nil {
 		return nil, nil // superusers only
 	}
 	ctx, cancel := context.WithTimeout(r.ctx, queryTimeout)
 	defer cancel()
-	q := r.app.RecordQuery(col).WithContext(ctx)
+	q, info, err := r.listQuery(col, filter, sort, params, rules)
+	if err != nil {
+		return nil, err
+	}
+	var records []*core.Record
+	if err := q.WithContext(ctx).Limit(int64(limit)).Offset(int64(offset)).All(&records); err != nil {
+		return nil, err
+	}
+	if rules {
+		enrich(r.app, info, records)
+	}
+	return records, nil
+}
+
+// count returns the number of records of a list (its pagination).
+func (r *renderer) count(col *core.Collection, filter string, params dbx.Params, rules bool) (int, error) {
+	if rules && col.ListRule == nil {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(r.ctx, queryTimeout)
+	defer cancel()
+	q, _, err := r.listQuery(col, filter, "", params, rules)
+	if err != nil {
+		return 0, err
+	}
+	var total int
+	err = q.WithContext(ctx).Select("COUNT(DISTINCT [[" + col.Name + ".id]])").OrderBy().Row(&total)
+	return total, err
+}
+
+// listQuery is the query of the records of a list.
+func (r *renderer) listQuery(col *core.Collection, filter, sort string, params dbx.Params, rules bool) (*dbx.SelectQuery, *core.RequestInfo, error) {
+	q := r.app.RecordQuery(col)
 	var info *core.RequestInfo
 	if rules {
 		info = r.info
@@ -354,37 +441,30 @@ func (r *renderer) find(col *core.Collection, filter, sort string, limit int, pa
 	if rules && *col.ListRule != "" {
 		expr, err := search.FilterData(*col.ListRule).BuildExpr(resolver)
 		if err != nil {
-			return nil, fmt.Errorf("invalid list rule: %w", err)
+			return nil, nil, fmt.Errorf("invalid list rule: %w", err)
 		}
 		q.AndWhere(expr)
 	}
 	if strings.TrimSpace(filter) != "" {
 		expr, err := search.FilterData(filter).BuildExpr(resolver, params)
 		if err != nil {
-			return nil, fmt.Errorf("invalid filter: %w", err)
+			return nil, nil, fmt.Errorf("invalid filter: %w", err)
 		}
 		q.AndWhere(expr)
 	}
 	for _, sf := range sortFields(sort) {
 		expr, err := sf.BuildExpr(resolver)
 		if err != nil {
-			return nil, fmt.Errorf("invalid sort: %w", err)
+			return nil, nil, fmt.Errorf("invalid sort: %w", err)
 		}
 		if expr != "" {
 			q.AndOrderBy(expr)
 		}
 	}
 	if err := resolver.UpdateQuery(q); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var records []*core.Record
-	if err := q.Limit(int64(limit)).All(&records); err != nil {
-		return nil, err
-	}
-	if rules {
-		enrich(r.app, info, records)
-	}
-	return records, nil
+	return q, info, nil
 }
 
 // enrich runs the record enrich hooks of a request of the visitor: the fields

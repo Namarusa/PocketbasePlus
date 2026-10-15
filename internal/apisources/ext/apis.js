@@ -3,6 +3,7 @@
 // tested here and run by the "API call" step of the flows.
 
 import { api, bare, field, handleError, page, select, sidebar } from "../pocketbaseplus/lib.js";
+import { secretName, secretPicker, secretRef } from "../pocketbaseplus/secrets.js";
 import { namesReady, parseCurl, splitURL, templateNames, varNameFor } from "./assist.js";
 
 const base = app.pb.buildURL("/_/extensions/pocketbaseplus-apis/");
@@ -277,14 +278,14 @@ function openSourceModal(existing = null) {
                             label: secretLabel,
                             name: "secret",
                             hint: (existing?.secret_hint ? `Stored (${existing.secret_hint}): leave empty to keep it. ` : "") +
-                                "Never shown again, nor in the run logs. Or a variable given by the flow, e.g. {{.vars.token}} (its value is hidden in the logs too).",
+                                "Never shown again, nor in the run logs. Or a secret picked with the key button ({{secret.NAME}}, shared and encrypted), or a variable given by the flow, e.g. {{.vars.token}} (its value is hidden in the logs too).",
                         },
                         t.div(
                             { className: "gp-api-secret" },
                             t.input({
                                 id: "secret",
                                 name: "secret",
-                                type: () => (data.showSecret ? "text" : "password"),
+                                type: () => (data.showSecret || data.secret.startsWith("{{") ? "text" : "password"),
                                 className: "gp-api-tpl",
                                 autocomplete: "new-password",
                                 placeholder: existing?.secret_hint ? "Unchanged" : "",
@@ -295,6 +296,10 @@ function openSourceModal(existing = null) {
                                 { type: "button", className: "btn xs circle transparent secondary", ariaLabel: app.attrs.tooltip("Show / hide"), onclick: () => (data.showSecret = !data.showSecret) },
                                 t.i({ className: () => (data.showSecret ? "ri-eye-off-line" : "ri-eye-line"), ariaHidden: true }),
                             ),
+                            secretPicker({
+                                onpick: (name) => (data.secret = secretRef(name)),
+                                suggest: () => ({ name: secretName("API_" + (data.name || "key")), value: data.secret.includes("{{") ? "" : data.secret }),
+                            }),
                         ),
                     ),
                 ),
@@ -310,7 +315,7 @@ function openSourceModal(existing = null) {
                 t.div(
                     { className: "col-lg-12" },
                     t.label({ className: "gp-label" }, "Shared headers"),
-                    t.div({ className: "field-help m-b-5" }, "Sent with every call (not secret: use the sign-in for keys)."),
+                    t.div({ className: "field-help m-b-5" }, "Sent with every call. For keys, use the sign-in or a secret: {{secret.NAME}}."),
                     pairsEditor(data, "headers", { keyPlaceholder: "Header-Name", addLabel: "Add header", tpl: true }),
                 ),
                 t.div(

@@ -18,6 +18,7 @@ import (
 	"github.com/Namarusa/PocketbasePlus/internal/httpcall"
 	"github.com/Namarusa/PocketbasePlus/internal/mail"
 	"github.com/Namarusa/PocketbasePlus/internal/rbac"
+	"github.com/Namarusa/PocketbasePlus/internal/secrets"
 )
 
 type stepHandler func(r *run, s Step) (input any, output any, err error)
@@ -590,6 +591,16 @@ func (r *run) httpLimit() error {
 }
 
 func stepHTTPRequest(r *run, s Step) (any, any, error) {
+	// the secrets ({{secret.NAME}}) are only data while the request is built
+	vals, used, err := secrets.Load(r.app, map[string]any{"url": s.Config["url"], "headers": s.Config["headers"], "query": s.Config["query"], "body": s.Config["body"]})
+	if err != nil {
+		return nil, nil, err
+	}
+	if vals != nil {
+		r.secrets = append(r.secrets, used...)
+		r.data["secret"] = vals
+		defer delete(r.data, "secret")
+	}
 	cfg, err := r.resolved(s, "method", "headers", "query")
 	if err != nil {
 		return nil, nil, err

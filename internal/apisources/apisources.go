@@ -30,6 +30,7 @@ import (
 
 	"github.com/Namarusa/PocketbasePlus/internal/flows"
 	"github.com/Namarusa/PocketbasePlus/internal/internalcols"
+	"github.com/Namarusa/PocketbasePlus/internal/secrets"
 )
 
 const (
@@ -48,6 +49,8 @@ var (
 	headerRegex = regexp.MustCompile("^[A-Za-z0-9!#$%&'*+.^_`|~-]+$")
 	pathRegex   = regexp.MustCompile(`^[^.\s]+(\.[^.\s]+)*$`)
 	varRefRegex = regexp.MustCompile(`\.vars\.([A-Za-z0-9_]+)`)
+	// a sign-in key that is one secret
+	singleSecretRegex = regexp.MustCompile(`^\{\{\s*secret\.[A-Za-z0-9_]+\s*\}\}$`)
 )
 
 //go:embed all:ext
@@ -88,7 +91,9 @@ func Bind(app core.App) {
 		rec := e.Record
 		rec.WithCustomData(true)
 		secret := rec.GetString("secret")
-		if strings.Contains(secret, "{{") {
+		if names := secrets.Refs(secret); len(names) > 0 && singleSecretRegex.MatchString(secret) {
+			rec.Set("secret_hint", "→ "+names[0])
+		} else if strings.Contains(secret, "{{") {
 			// a secret made of variables: show which ones (not the rest of it)
 			var refs []string
 			for _, m := range varRefRegex.FindAllStringSubmatch(expand(secret, shortNames(variablesOf(rec))), -1) {
@@ -176,7 +181,7 @@ func validateSource(app core.App, r *core.Record) error {
 	r.Set("base_url", base)
 
 	declared := checkVariables(r, errs)
-	check := templateChecker(declared, errs)
+	check := templateChecker(app, declared, errs)
 	if base != "" {
 		if strings.Contains(base, "{{") {
 			// e.g. https://{{.vars.host}}/v1, or {{.vars.base}} (a whole address)
@@ -252,7 +257,7 @@ func shortNamesOf(declared map[string]bool) []string {
 }
 
 // templateChecker checks that templates parse and only use declared variables.
-func templateChecker(declared map[string]bool, errs validation.Errors) func(field, src string) {
+func templateChecker(app core.App, declared map[string]bool, errs validation.Errors) func(field, src string) {
 	return func(field, src string) {
 		if _, done := errs[field]; done || !strings.Contains(src, "{{") {
 			return
@@ -272,6 +277,9 @@ func templateChecker(declared map[string]bool, errs validation.Errors) func(fiel
 				errs[field] = validation.NewError("unknown_variable", fmt.Sprintf("Add the variable %q (or fix its name).", m[1]))
 				return
 			}
+		}
+		if err := secrets.Check(app, src); err != nil {
+			errs[field] = validation.NewError("unknown_secret", err.Error())
 		}
 	}
 }
@@ -337,7 +345,7 @@ func validateCall(app core.App, r *core.Record) error {
 	}
 
 	// templates: they parse and use declared variables
-	check := templateChecker(declared, errs)
+	check := templateChecker(app, declared, errs)
 	check("path", r.GetString("path"))
 	check("body", r.GetString("body"))
 	for _, field := range []string{"query", "headers", "form"} {
@@ -403,7 +411,9 @@ func testRoute(e *core.RequestEvent) error {
 	}
 
 	if body.DryRun {
-		input, req, _, err := prepare(source, call, vars)
+		// the secrets show their name, never their value
+		placeholders, _, _ := secretsOf(e.App, source, call, true)
+		input, req, _, err := prepare(source, call, vars, placeholders)
 		res := map[string]any{"request": input}
 		if err == nil {
 			full := req.URL
@@ -421,7 +431,7 @@ func testRoute(e *core.RequestEvent) error {
 		return e.JSON(http.StatusOK, res)
 	}
 
-	input, output, err := run(e.Request.Context(), source, call, vars)
+	input, output, err := run(e.Request.Context(), e.App, source, call, vars)
 	res := map[string]any{"request": input}
 	if err != nil {
 		res["error"] = err.Error()

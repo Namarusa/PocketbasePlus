@@ -69,6 +69,15 @@ make test    # Go tests
 First run: open the installer link printed in the console (or run `./pocketbaseplus superuser upsert EMAIL PASS`), then set
 up SMTP in Settings → Mail settings.
 
+### Upgrading
+
+Stop the server, replace the binary (or pull the new image) and start it again: the database is migrated on start.
+Back up `pb_data` first (Settings → Backups, or a copy of the folder while the server is stopped).
+
+- **0.3.0**: the API keys of the AI providers and the secrets of the APIs move to [Settings → Secrets](#secrets)
+  (named `AI_…` and `API_…`), and the fields keep a `{{secret.NAME}}` reference. Set `POCKETBASEPLUS_ENCRYPTION_KEY`
+  to store them encrypted.
+
 ## Docker
 
 One image, `ghcr.io/namarusa/pocketbaseplus`, for **linux/amd64**, **linux/arm64** and **linux/arm/v7**: Docker picks the
@@ -108,7 +117,7 @@ All are optional, and work the same way without Docker (`POCKETBASEPLUS_HTTP` is
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `POCKETBASEPLUS_ADMIN_EMAIL`, `POCKETBASEPLUS_ADMIN_PASSWORD` | | Creates the first superuser when there is none yet (no installer link needed). An existing account is never changed: remove them after the first start. |
-| `POCKETBASEPLUS_ENCRYPTION_KEY` | | 32 characters (e.g. `openssl rand -hex 16`) encrypting the stored settings (SMTP password, S3 and OAuth2 secrets). Keep it safe: without it, the app can't start on that data anymore. Existing settings are encrypted at their next save. |
+| `POCKETBASEPLUS_ENCRYPTION_KEY` | | 32 characters (e.g. `openssl rand -hex 16`) encrypting the stored settings (SMTP password, S3 and OAuth2 secrets) and the [Secrets](#secrets). Keep it safe: without it, the app can't start on that data anymore. Existing settings are encrypted at their next save, existing secrets at the next start. |
 | `POCKETBASEPLUS_HTTP` | `0.0.0.0:8090` in the image, `127.0.0.1:8090` otherwise | Address and port the server listens on. |
 | `PUID`, `PGID` | `65532` in the image | The user and group the app runs as in the container; `/pb_data` is given to them at startup (Linux, when started as root). |
 | `TZ` | `UTC` | Time zone of the server (logs, dates without a zone). Time zones are embedded in the binary. |
@@ -139,8 +148,9 @@ Everything else (SMTP, S3, backups, AI providers, OAuth2) is set in the dashboar
 - **Values in flow HTTP requests and API calls** are escaped for their place: path segments and query values of the
   URL, string content or JSON values of a JSON body (`{{json ...}}` and other helpers are inserted as written), XML
   text, form fields. Header values can't hold line breaks.
-- **API secrets** (tokens, passwords, API keys of [Flows → APIs](#apis)) are never returned by the API, even to
-  superusers (only their last 4 characters), never logged, and removed from error messages. A page action makes at
+- **Secrets** ([Settings → Secrets](#secrets), and the sign-in of [Flows → APIs](#apis)) are never returned by the
+  API, even to superusers (only a hint like `sk-…a3f9`), never logged, and removed from error messages and responses
+  by their value. A page action makes at
   most 30 HTTP requests or API calls per visitor in 10 minutes.
 - **Rich text of the records** shown on pages keeps formatting only (allow list): no forms, buttons, styles sheets,
   frames, media players, or positioning styles; user links get `rel="nofollow ugc"`.
@@ -337,7 +347,7 @@ of Budibase or the API calls of FlutterFlow:
 
 - **An API** has a base address (`https://api.example.com/v1`), a sign-in (*Bearer token*, *Basic auth*, *API key in a
   header* or *in the query string*), shared headers and a timeout. The secret is entered once and stays on the
-  server.
+  server (or picked from the [Secrets](#secrets)).
 - **Variables** are written `{{name}}` (or `{{.vars.name}}`, needed only when the name is also a function, like
   `title`): type `{{customer_id}}` in a field and the variable is added to the list (a variable of the path is
   required); the ones no field uses are struck out. Each has a **default value**, used by *Test the call* and when the
@@ -377,6 +387,26 @@ of Budibase or the API calls of FlutterFlow:
 To remove the module: back up `pb_data`, run `./pocketbaseplus apis uninstall --yes` (deletes the APIs and their calls),
 remove `apisources.Register(app)` from `main.go` and delete `internal/apisources/`. Flows with API call steps then
 fail with "the APIs module isn't installed".
+
+## Secrets
+
+**Settings → Secrets** keeps the keys, tokens and passwords in one place: enter a value once, then use it as
+`{{secret.NAME}}`.
+
+- **Where**: the headers, query parameters, URL and body of the flow *HTTP request* step, the saved
+  [APIs](#apis) (sign-in, headers, path, body) and the API key of the [AI providers](#ai). The key button next to these
+  fields lists the secrets (or creates one), and a header that looks secret (`Authorization`, `X-API-Key`...)
+  typed in a flow offers **Move to Secrets**: the key leaves the flow, which keeps `Bearer {{secret.NAME}}`.
+- **Never shown**: the value is never sent back to the browser, even to superusers (a hint like `sk-…a3f9` instead).
+  The run logs, step outputs, test data and errors show `[hidden]` in place of the value, even when an API repeats
+  it. The previews show `[secret NAME]`.
+- **Nowhere else**: secrets are only read when the request is sent. The other steps, the scripts, the emails and the
+  page formulas can't use them (they could show the value), and saving one there is refused.
+- **Encrypted** with `POCKETBASEPLUS_ENCRYPTION_KEY` (see [Environment variables](#environment-variables)). Without
+  it they are stored as text, and the page says so; once the key is set, they're encrypted at the next start.
+- **One change**: replacing the value of a secret updates every flow, API and AI provider using it. The list shows
+  what uses each secret, and one in use can't be deleted.
+- **Upgrade**: the keys of the existing APIs and AI providers moved to secrets named `API_…` and `AI_…`.
 
 ## Functions
 
@@ -424,7 +454,7 @@ Notes:
 
 **Settings → AI** (a group of the native settings sidebar):
 
-- **AI providers**: an account with its API key.
+- **AI providers**: an account with its API key (typed, or one of the [Secrets](#secrets)).
   - **TypeSafe** serves **System One** models such as Jev ([docs](https://docs.typesafe.ai)). They answer typed questions
     with calibrated probabilities, in well under a second.
   - **Standard** models (general LLMs):
@@ -643,6 +673,16 @@ embedded) and publishes them on your site. Blocks in the **Data** group show you
 - **Collection list**: the records of a collection (filter, sort, max records). Design one card (the *item*) and it's
   repeated for each record; the *empty state* shows when there are none. Picking the collection fills the card with
   its name, image and another field.
+  - **Pagination**: *Pages* adds a pager after the list (‹ Previous 1 2 … 56 Next ›, "5–8 of 221"), *Show more* a
+    button that shows the next records below; *Per page* sets how many. To place the pager elsewhere, drop the
+    **Pagination** block where it goes. The pages are links (`?page=2`), so they work without JavaScript, can be
+    bookmarked and are followed by search engines.
+  - **Search box**: drop it near the list and tick the fields it searches (the list's own and its related records',
+    e.g. `brand → name`; the usual ones are ticked when you drop it). The visitor's words must each be found in one
+    of the fields (`pika xy` finds "Pikachu" numbered XY95), ignoring case, combined with the list's filter and API
+    rules; hidden fields can't be searched. The search is in the address (`?q=pika`) and is kept while paging.
+  - When several lists of a page page or search, their parameters take the list's name (`cards_page`, `cards_q`): the
+    collection name, or the list's **Address name** to tell apart two lists of the same collection.
 - **Field** / **Field image**: a field of the current record (the card's record, or the record of a record page).
   Dates can show the date, date and time, or time; rich text keeps its formatting; relations show the related names.
 - **Record link**: links each card to a **record page**, a page showing one record per address (`/{slug}/{id}`),
@@ -670,6 +710,27 @@ embedded) and publishes them on your site. Blocks in the **Data** group show you
   (`record.brand.name`), or a list for multiple relations (`{{join ", " (pluck "name" record.tags)}}`); alone it
   prints the related names. The result is text (HTML is escaped). A formula error shows in the preview only; the
   published page shows nothing there.
+- **Dynamic values**: any element's attributes and styles can be computed the same way, from its **Dynamic values**
+  setting: an image address (`{{record.image}}/high.webp`, the result replaces the image field), a link
+  (`/search?q={{urlquery record.name}}`), an alternative text, a tooltip, extra CSS classes
+  (`status-{{lower record.status}}`), and the text and background colors, sizes, spacing, opacity or display
+  (`{{if gt record.stock 0}}green{{else}}red{{end}}`, `{{record.progress}}%`, `none` hides the element). The editor
+  shows the sample record's values next to its fields, and the result as it shows (the image, the color). Computed
+  addresses follow the rules of the page links (http(s), mailto, tel or relative); a style takes one plain value (no
+  `url()`, no other declaration). An empty result removes the attribute, or keeps the element's own style.
+- **Conditions** (like Budibase's): any element can be shown, hidden or changed depending on the data, from its
+  **Conditions** setting, without writing code. A rule reads as a sentence built with dropdowns: *Hide the element if*
+  `image` *is empty*, *Show the element only if* `stock` *is greater than* `0`, *Set the text color to* `gold` *if*
+  `rarity` *equals* `Rare`, *Replace the text with* `Sold out` *if*... The field is one of the record's (or its related
+  records'), the signed-in visitor's or a parameter of the page address, and the comparisons follow its type: is empty
+  / is not empty, equals (texts ignore case), contains, starts or ends with, greater or less than, before or after for
+  dates (with *Now*, *Today*, *In 7 days*), includes for lists, is yes / is no. Select fields offer their options. A
+  rule can combine several conditions (*all* or *any* of them); for the advanced cases a condition can be a formula
+  (`{{and (gt record.hp 100) (eq record.type "Fire")}}`) and a value can use `{{ }}` parts. The editor shows each
+  rule's result on the sample record, and the canvas dims an element hidden on the sample. The server applies the
+  rules for each visit and each record: a hidden element is removed from the page (the visitor never receives it),
+  the rules apply in order and the last matching value wins. Conditions see what the field bindings see (hidden
+  fields are empty). **Visible to** still shows elements by role.
 - **Form**: embeds one of your [forms](#forms).
 - Plus sections, columns, headings, text, images (uploaded to the page), buttons, links, dividers and videos, with
   the styles panel and desktop/tablet/phone views. The canvas shows sample records; **Preview** opens the saved page
@@ -824,7 +885,9 @@ network through a custom endpoint, e.g. Ollama or LM Studio), SMTP, flow HTTP st
 for services on your network), and map tiles (OpenStreetMap by default).
 
 - `POCKETBASEPLUS_OFFLINE=1`: published pages may only load the app's files (images, fonts and embeds from other sites are
-  blocked, and the builder warns when a page uses some), and the Map layout shows its markers on a plain grid.
+  blocked, and the builder warns when a page uses some), the Map layout shows its markers on a plain grid, and the
+  dashboard doesn't show images from other sites (otherwise it shows https images, e.g. the record images in the page
+  builder).
 - `POCKETBASEPLUS_MAP_TILES=http://10.0.0.5:8080/tile/{z}/{x}/{y}.png`: a tile server on your network for the Map layout
   (allowed in the dashboard CSP). PocketBase's own location field still uses OpenStreetMap.
 

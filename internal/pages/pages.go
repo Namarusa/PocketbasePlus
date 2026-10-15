@@ -114,6 +114,7 @@ func Bind(app core.App) {
 		se.Router.POST("/api/pages/{id}/duplicate", duplicatePage).Bind(apis.RequireSuperuserAuth())
 		se.Router.POST("/api/pages/{id}/snippet", snippet).Bind(apis.RequireSuperuserAuth())
 		se.Router.POST("/api/pages/{id}/formula", formulaPreview).Bind(apis.RequireSuperuserAuth())
+		se.Router.POST("/api/pages/{id}/conditions", conditionsPreview).Bind(apis.RequireSuperuserAuth())
 		se.Router.GET("/api/pages/chart-palettes", chartPalettesRoute).Bind(apis.RequireSuperuserAuth())
 		return se.Next()
 	})

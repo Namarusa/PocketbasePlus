@@ -46,6 +46,108 @@ func (r *renderer) formula(n *xhtml.Node, s scope, src string) {
 	n.AppendChild(textNode(out))
 }
 
+// Dynamic values: a formula for an attribute or a style of any element
+// (data-pb-attr-src="{{record.image}}/high.webp",
+// data-pb-style-color="{{if gt record.stock 0}}green{{else}}red{{end}}").
+// The result replaces the attribute (class: added to the element's classes;
+// empty: the attribute is removed) or sets the style property.
+const (
+	attrDynamic  = "data-pb-attr-"
+	styleDynamic = "data-pb-style-"
+)
+
+// the attributes and the style properties a formula may set
+var (
+	dynamicAttrs = map[string]bool{
+		"src": true, "href": true, "alt": true, "title": true, "class": true, "width": true, "height": true,
+		"placeholder": true, "value": true, "aria-label": true, "poster": true,
+	}
+	dynamicStyles = map[string]bool{
+		"color": true, "background-color": true, "border-color": true, "width": true, "height": true,
+		"max-width": true, "min-height": true, "font-size": true, "font-weight": true, "opacity": true,
+		"display": true, "text-align": true, "padding": true, "margin": true, "border-radius": true,
+		"border-width": true, "gap": true, "transform": true,
+	}
+	// a style value: no other declaration, no rule, no quote, no escape
+	styleValueRegex = regexp.MustCompile(`^[#%(),.\-+*/!\w\s]*$`)
+	classRegex      = regexp.MustCompile(`[^A-Za-z0-9_\-: ]`)
+)
+
+// hasDynamic reports whether the element has dynamic values.
+func hasDynamic(n *xhtml.Node) bool {
+	for _, a := range n.Attr {
+		if strings.HasPrefix(a.Key, attrDynamic) || strings.HasPrefix(a.Key, styleDynamic) {
+			return true
+		}
+	}
+	return false
+}
+
+// dynamic sets the attributes and styles of the element computed by formulas.
+func (r *renderer) dynamic(n *xhtml.Node, s scope) {
+	var styles []string
+	tag := strings.ToLower(n.Data)
+	for _, a := range append([]xhtml.Attribute(nil), n.Attr...) {
+		attr, isAttr := strings.CutPrefix(a.Key, attrDynamic)
+		prop, isStyle := strings.CutPrefix(a.Key, styleDynamic)
+		if (!isAttr || !dynamicAttrs[attr]) && (!isStyle || !dynamicStyles[prop]) || strings.TrimSpace(a.Val) == "" {
+			continue
+		}
+		v, err := r.evalFormula(s, a.Val)
+		if err != nil {
+			r.app.Logger().Warn("Page binding error", "error", "formula of "+attr+prop+": "+err.Error())
+			if r.preview {
+				setAttr(n, "title", "⚠ formula of "+attr+prop+": "+err.Error())
+			}
+			continue
+		}
+		v = strings.TrimSpace(v)
+		if isStyle {
+			if v != "" && dynamicStyle(v) {
+				styles = append(styles, prop+":"+v)
+			}
+			continue
+		}
+		switch {
+		case attr == "class":
+			if v = strings.Join(strings.Fields(classRegex.ReplaceAllString(v, "")), " "); v != "" {
+				if old := getAttr(n, "class"); old != "" {
+					v = old + " " + v
+				}
+				setAttr(n, "class", v)
+			}
+			continue
+		case v == "":
+			removeAttr(n, attr)
+			continue
+		case urlAttrs[attr]:
+			if !safeURL(v, attr == "src" && tag == "img") {
+				removeAttr(n, attr)
+				continue
+			}
+			if attr == "href" {
+				v = currentPath(v)
+			}
+		}
+		setAttr(n, attr, v)
+	}
+	if len(styles) > 0 {
+		style := strings.TrimRight(strings.TrimSpace(getAttr(n, "style")), ";")
+		if style != "" {
+			style += ";"
+		}
+		setAttr(n, "style", style+strings.Join(styles, ";"))
+	}
+}
+
+// dynamicStyle reports whether a computed style value is safe: one value,
+// no url() or image (no request to another site).
+func dynamicStyle(v string) bool {
+	l := strings.ToLower(v)
+	return len(v) <= 200 && styleValueRegex.MatchString(v) &&
+		!strings.Contains(l, "url") && !strings.Contains(l, "image") && !strings.Contains(l, "expression")
+}
+
 func (r *renderer) evalFormula(s scope, src string) (string, error) {
 	if len(src) > maxFormula {
 		return "", errFormulaTooLong
@@ -185,7 +287,13 @@ func fieldValue(rec *core.Record, f core.Field) any {
 // load the related records of a list at once ("brand.id").
 func formulaPaths(n *xhtml.Node) []string {
 	var out []string
-	for _, m := range formulaPathRegex.FindAllStringSubmatch(getAttr(n, attrFormula), -1) {
+	src := getAttr(n, attrFormula) + " " + getAttr(n, attrConditions)
+	for _, a := range n.Attr {
+		if strings.HasPrefix(a.Key, attrDynamic) || strings.HasPrefix(a.Key, styleDynamic) {
+			src += " " + a.Val
+		}
+	}
+	for _, m := range formulaPathRegex.FindAllStringSubmatch(src, -1) {
 		if m[1] != "record" {
 			continue
 		}
@@ -201,32 +309,48 @@ func formulaPaths(n *xhtml.Node) []string {
 
 // --- builder preview ------------------------------------------------------------------------
 
-// formulaPreview runs a formula of the builder on a sample record
-// (POST /api/pages/{id}/formula {formula, collection, record, as}).
-func formulaPreview(e *core.RequestEvent) error {
+// previewBody is the sample of a builder preview: a record of the
+// collection, seen as a visitor ("as").
+type previewBody struct {
+	Collection string `json:"collection"`
+	Record     string `json:"record"`
+	As         string `json:"as"`
+}
+
+// previewRenderer reads the body of a builder preview (dst embeds pb) and
+// returns a renderer of the page with the sample record's scope.
+func previewRenderer(e *core.RequestEvent, dst any, pb *previewBody) (*renderer, scope, error) {
 	if _, err := e.App.FindRecordById(Collection, e.Request.PathValue("id")); err != nil {
-		return e.NotFoundError("", nil)
+		return nil, scope{}, e.NotFoundError("", nil)
 	}
-	var body struct {
-		Formula    string `json:"formula"`
-		Collection string `json:"collection"`
-		Record     string `json:"record"`
-		As         string `json:"as"`
+	if err := e.BindBody(dst); err != nil || !validAs(pb.As) {
+		return nil, scope{}, e.BadRequestError("Invalid preview.", err)
 	}
-	if err := e.BindBody(&body); err != nil || !validAs(body.As) {
-		return e.BadRequestError("Invalid formula.", err)
-	}
-	v := previewVisitor(e.App, body.As)
+	v := previewVisitor(e.App, pb.As)
 	s := scope{}
-	if body.Collection != "" && body.Record != "" {
-		if col, err := listCollection(e.App, body.Collection); err == nil {
-			if rec, err := e.App.FindRecordById(col, body.Record); err == nil {
+	if pb.Collection != "" && pb.Record != "" {
+		if col, err := listCollection(e.App, pb.Collection); err == nil {
+			if rec, err := e.App.FindRecordById(col, pb.Record); err == nil {
 				s = scope{col: col, rec: rec}
 			}
 		}
 	}
 	r := &renderer{app: e.App, ctx: e.Request.Context(), query: url.Values{}, preview: true, budget: maxRecords,
 		visitor: v, info: v.requestInfo(), path: "/"}
+	return r, s, nil
+}
+
+// formulaPreview runs a formula of the builder on a sample record
+// (POST /api/pages/{id}/formula {formula, collection, record, as}).
+func formulaPreview(e *core.RequestEvent) error {
+	var body struct {
+		Formula string `json:"formula"`
+		previewBody
+	}
+	r, s, err := previewRenderer(e, &body, &body.previewBody)
+	if err != nil {
+		return err
+	}
 	out, err := r.evalFormula(s, body.Formula)
 	if err != nil {
 		return e.JSON(200, map[string]string{"error": err.Error()})

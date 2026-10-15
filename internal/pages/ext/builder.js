@@ -10,7 +10,8 @@ import { addBlockSearch } from "./blocksearch.js";
 import { defineWidgetTypes, refreshChartTraits, refreshWidgets, setWidgetBlocks } from "./widgets.js";
 import { addColumnsTrait, defineColumnsTrait } from "./tablecols.js";
 import { clearDraft, historyModal, offerDraft, storeDraft } from "./history.js";
-import { defineFormula, formulaModal, formulaSample } from "./formula.js";
+import { applyConditions, defineConditions } from "./conditions.js";
+import { applyDynamic, defineFormula, dynamicValues, formulaModal, formulaSample } from "./formula.js";
 import { accessLabel, addVisibleTrait, applyViewAs, defineMemberTypes, loadMembers, members, refreshMemberTraits, setMemberBlocks, viewerCanOpen, viewerOptions } from "./members.js";
 
 const base = app.pb.buildURL("/_/extensions/pocketbaseplus-pages/");
@@ -269,7 +270,111 @@ export function pageBuilder(route) {
         return { col, rec, f: col?.fields.find((x) => x.name == parts.at(-1)) || null };
     }
 
-    const collectionOptions = () => [{ id: "", label: "- Select a collection -" }, ...collections.map((c) => ({ id: c.name, label: c.name }))];
+    // ---- pagination and search (internal/pages/paging.go)
+
+    /** The top level lists of the page: [{ key, col, comp }] (a list's name in the address). */
+    function pageLists() {
+        if (!editor) {
+            return [];
+        }
+        const out = [];
+        for (const comp of editor.getWrapper().find("[data-pb-list]")) {
+            if (comp.parents().some((p) => p.getAttributes()["data-pb-list"] !== undefined)) {
+                continue; // nested: repeated with each record
+            }
+            const a = comp.getAttributes();
+            const key = (a["data-pb-key"] || a["data-pb-list"] || "").replace(/[^\w-]/g, "");
+            if (key && !out.some((l) => l.key == key)) {
+                out.push({ key, col: byName(a["data-pb-list"]), comp });
+            }
+        }
+        return out;
+    }
+
+    const listChoices = (none) => {
+        const lists = pageLists();
+        return [{ id: "", label: lists.length ? none : "- Add a collection list first -" }, ...lists.map((l) => ({ id: l.key, label: l.col && l.col.name != l.key ? `${l.key} (${l.col.name})` : l.key }))];
+    };
+
+    /** The fields a search box can search: texts, numbers, choices (and a related record's). */
+    function searchableFields(col) {
+        const types = ["text", "email", "url", "editor", "select", "number"];
+        return bindableFields(col, "text", byName).filter((b) => types.includes(b.field.type) && b.path != "id" && !(col.type == "auth" && b.path == "email"));
+    }
+
+    function defaultSearchFields(col) {
+        const all = searchableFields(col);
+        const labels = labelFields(col).map((f) => f.name);
+        const picked = all.filter((b) => labels.includes(b.path));
+        for (const b of all) {
+            if (picked.length >= 3) {
+                break;
+            }
+            if (!picked.includes(b) && !b.path.includes(".") && b.field.type != "editor" && b.field.type != "url") {
+                picked.push(b);
+            }
+        }
+        return picked.map((b) => b.path);
+    }
+
+    /** Links new search boxes and pagers to a list of the page (the first one). */
+    function linkSearch(root) {
+        const lists = pageLists();
+        for (const comp of [root, ...root.find("[data-pb-search], [data-pb-pager]")]) {
+            const a = comp.getAttributes();
+            if (a["data-pb-search"] === "" && lists.length) {
+                comp.addAttributes({ "data-pb-search": lists[0].key, "data-pb-search-fields": defaultSearchFields(lists[0].col).join(",") });
+            }
+            if (a["data-pb-pager"] === "" && lists.length) {
+                const list = lists.find((l) => l.comp.getAttributes()["data-pb-paginate"]) || lists[0];
+                comp.addAttributes({ "data-pb-pager": list.key });
+                if (!list.comp.getAttributes()["data-pb-paginate"]) {
+                    list.comp.addAttributes({ "data-pb-paginate": "pages" });
+                }
+            }
+        }
+    }
+
+    function defineSearchTraits(ed) {
+        ed.Traits.addType("gpp-search-fields", {
+            createInput({ component }) {
+                const el = document.createElement("div");
+                el.className = "gpp-search-fields";
+                el.addEventListener("change", () => {
+                    const picked = [...el.querySelectorAll("input:checked")].map((i) => i.value);
+                    component.addAttributes({ "data-pb-search-fields": picked.join(",") });
+                });
+                render(el, component);
+                return el;
+            },
+            onUpdate({ elInput, component }) {
+                render(elInput, component);
+            },
+        });
+        function render(el, comp) {
+            const a = comp.getAttributes();
+            const list = pageLists().find((l) => l.key == a["data-pb-search"]);
+            const picked = new Set(String(a["data-pb-search-fields"] || "").split(",").filter(Boolean));
+            if (!list?.col) {
+                el.replaceChildren(Object.assign(document.createElement("span"), { className: "gpp-hint", textContent: "Choose the list it searches." }));
+                return;
+            }
+            const rows = searchableFields(list.col).map((b) => {
+                const label = document.createElement("label");
+                const box = Object.assign(document.createElement("input"), { type: "checkbox", value: b.path, checked: picked.has(b.path) });
+                const name = Object.assign(document.createElement("span"), { textContent: b.path.replace(".", " → ") });
+                label.title = b.label;
+                label.append(box, name, Object.assign(document.createElement("small"), { textContent: b.field.type }));
+                return label;
+            });
+            if (!picked.size) {
+                rows.unshift(Object.assign(document.createElement("span"), { className: "gpp-hint gpp-warn", textContent: "Tick the fields to search." }));
+            }
+            el.replaceChildren(...rows);
+        }
+    }
+
+        const collectionOptions = () => [{ id: "", label: "- Select a collection -" }, ...collections.map((c) => ({ id: c.name, label: c.name }))];
     // charts and calendars (widgets.js)
     const widgetCtx = { pageId: id, byName: (name) => byName(name), collectionOptions: () => collectionOptions(), viewAs: () => data.viewAs };
     // formulas (formula.js)
@@ -277,6 +382,12 @@ export function pageBuilder(route) {
         pageId: id,
         collection: (comp) => contextCollection(comp),
         sampleId: async (comp) => (await contextSample(comp))?.id || "",
+        sample: async (comp) => (await contextSample(comp)) || null,
+        typedFields: (col) => bindableFields(col, "text", byName),
+        typedUserFields: () => {
+            const users = byName("users");
+            return users ? [{ path: "id", label: "id", field: null }, ...bindableFields(users, "text", byName)] : [];
+        },
         fields: (col) => bindableFields(col, "text", byName).map((b) => ({ path: b.path, label: b.label })),
         userFields: () => {
             const users = byName("users");
@@ -322,6 +433,17 @@ export function pageBuilder(route) {
                         { type: "text", name: "data-pb-filter", label: "Filter", placeholder: "e.g. published = true" },
                         { type: "text", name: "data-pb-sort", label: "Sort", placeholder: "e.g. -created" },
                         { type: "number", name: "data-pb-limit", label: "Max records", min: 1, max: 100, placeholder: "12" },
+                        {
+                            type: "select",
+                            name: "data-pb-paginate",
+                            label: "Pagination",
+                            options: [
+                                { id: "", label: "None (the first records)" },
+                                { id: "pages", label: "Pages (‹ 1 2 3 ›)" },
+                                { id: "more", label: "\"Show more\" button" },
+                            ],
+                        },
+                        { type: "text", name: "data-pb-key", label: "Address name", placeholder: "the collection name", attributes: { title: "The list's name in the page address (cards_page=2) when several lists of the page page or search" } },
                         {
                             type: "select",
                             name: "data-pb-access",
@@ -376,6 +498,30 @@ export function pageBuilder(route) {
                         "title",
                         { type: "select", name: "target", label: "Open in", options: [{ id: "", label: "Same tab" }, { id: "_blank", label: "New tab" }] },
                     ],
+                },
+            },
+        });
+        dc.addType("pb-search", {
+            isComponent: (el) => el?.tagName == "FORM" && has(el, "data-pb-search"),
+            model: {
+                defaults: {
+                    name: "Search box",
+                    icon: '<i class="ri-search-line"></i>',
+                    traits: [
+                        { type: "select", name: "data-pb-search", label: "Searches", options: [] },
+                        { type: "gpp-search-fields", name: "data-pb-search-fields", label: "Search in" },
+                    ],
+                },
+            },
+        });
+        dc.addType("pb-pager", {
+            isComponent: (el) => has(el, "data-pb-pager"),
+            model: {
+                defaults: {
+                    name: "Pagination",
+                    icon: '<i class="ri-pages-line"></i>',
+                    droppable: false,
+                    traits: [{ type: "select", name: "data-pb-pager", label: "Pages of", options: [] }],
                 },
             },
         });
@@ -434,6 +580,18 @@ export function pageBuilder(route) {
                 ],
             },
         });
+        bm.add("pb-search", {
+            ...dataCat,
+            label: "Search box",
+            media: icon("ri-search-line"),
+            content: `<form data-pb-search="" data-pb-search-fields="" style="display:flex;gap:8px;max-width:560px;margin:16px auto;padding:0 24px"><input type="search" class="input" placeholder="Search…" aria-label="Search" style="flex:1 1 auto;min-width:0;padding:8px 12px;border:1px solid #d4d4d8;border-radius:6px;font:inherit"><button type="submit" class="btn" style="padding:8px 16px;border-radius:6px;font:inherit;font-weight:600;cursor:pointer">Search</button></form>`,
+        });
+        bm.add("pb-pager", {
+            ...dataCat,
+            label: "Pagination",
+            media: icon("ri-pages-line"),
+            content: `<nav data-pb-pager="" style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin:16px 0"><span class="btn" data-variant="ghost">‹ Previous</span><span class="btn" data-variant="outline">1</span><span class="btn" data-variant="ghost">2</span><span class="btn" data-variant="ghost">3</span><span class="btn" data-variant="ghost">Next ›</span></nav>`,
+        });
         bm.add("pb-field", { ...dataCat, label: "Field", media: icon("ri-input-field"), content: { type: "pb-field", tagName: "p", attributes: { "data-pb-field": "" } } });
         bm.add("pb-formula", { ...dataCat, label: "Formula", media: icon("ri-functions"), content: { type: "pb-formula", tagName: "p", attributes: { "data-pb-formula": "" }, components: [{ type: "textnode", content: "ƒ formula" }] } });
         bm.add("pb-image", { ...dataCat, label: "Field image", media: icon("ri-image-2-line"), content: { type: "pb-image", attributes: { "data-pb-field": "" }, style: { "max-width": "100%", height: "auto" } } });
@@ -471,6 +629,26 @@ export function pageBuilder(route) {
         const textual = (comp.is("text") || comp.is("pb-field")) && tag != "img" && tag != "a";
         if (textual && !comp.getTrait("gpp-formula")) {
             comp.addTrait({ type: "gpp-formula", name: "gpp-formula", label: "Formula" }, { at: comp.getTrait("data-pb-field") ? 1 : 0 });
+        }
+        // any element can compute attributes and styles (image address, color...)
+        if (comp !== editor.getWrapper() && !comp.is("pb-part")) {
+            if (!comp.getTrait("gpp-conditions")) {
+                comp.addTrait({ type: "gpp-conditions", name: "gpp-conditions", label: "Conditions" });
+            }
+            if (!comp.getTrait("gpp-dynamic")) {
+                comp.addTrait({ type: "gpp-dynamic", name: "gpp-dynamic", label: "Dynamic values" });
+            }
+        }
+        if (comp.is("pb-search")) {
+            comp._pbSearch ??= comp.getAttributes()["data-pb-search"];
+        }
+        comp.getTrait("data-pb-search")?.set("options", listChoices("- Choose a list -"));
+        comp.getTrait("data-pb-pager")?.set("options", listChoices("- Choose a list -"));
+        const limitTrait = comp.is("pb-list") && comp.getTrait("data-pb-limit");
+        if (limitTrait) {
+            const paged = !!comp.getAttributes()["data-pb-paginate"];
+            limitTrait.set("label", paged ? "Per page" : "Max records");
+            comp.getTrait("data-pb-key")?.set("placeholder", comp.getAttributes()["data-pb-list"] || "the collection name");
         }
         const options = {
             "data-pb-field": () => fieldOptions(comp, tag == "img" ? "image" : "text"),
@@ -562,6 +740,7 @@ export function pageBuilder(route) {
     /** Shows sample values of the bound fields (the server shows the real ones). */
     async function applySamples(root) {
         const comps = [root, ...root.find("[data-pb-field], [data-pb-form], [data-pb-formula]")].filter((c) => c.getAttributes);
+        const dynamic = [root, ...root.find("*")].filter((c) => c.getAttributes && (dynamicValues(c).length || c.getAttributes()["data-pb-conditions"] !== undefined || c.view?.el?._gppCondClasses));
         for (const comp of comps) {
             const attrs = comp.getAttributes();
             if (attrs["data-pb-formula"] !== undefined) {
@@ -585,6 +764,9 @@ export function pageBuilder(route) {
             }
             const { col, rec, f } = await samplePath(contextCollection(comp), await contextSample(comp), name);
             if (comp.get("tagName") == "img") {
+                if (comp.getAttributes()["data-pb-attr-src"]) {
+                    continue; // a computed address replaces the field (set since)
+                }
                 const url = sampleURL(col, rec, f) || placeholderImage;
                 if (comp.get("src") != url) {
                     comp.set("src", url);
@@ -596,11 +778,18 @@ export function pageBuilder(route) {
                 }
             }
         }
+        // after the fields: a computed image address replaces the field's
+        for (const comp of dynamic) {
+            const rec = await contextSample(comp);
+            await applyDynamic(id, comp, contextCollection(comp), rec?.id, data.viewAs || "");
+            await applyConditions(id, comp, contextCollection(comp), rec?.id, data.viewAs || "");
+        }
     }
 
     const bindingKey = (comp) => {
         const a = comp.getAttributes();
-        return [a["data-pb-list"], a["data-pb-field"], a["data-pb-link"], a["data-pb-form"], a["data-pb-filter"], a["data-pb-sort"], a["data-pb-format"], a["data-pb-href"], a["data-pb-formula"]].join("|");
+        const dyn = dynamicValues(comp).map((v) => v.key + "=" + v.formula);
+        return [a["data-pb-list"], a["data-pb-field"], a["data-pb-link"], a["data-pb-form"], a["data-pb-filter"], a["data-pb-sort"], a["data-pb-format"], a["data-pb-href"], a["data-pb-formula"], a["data-pb-conditions"], ...dyn].join("|");
     };
 
     function onAttributes(comp) {
@@ -611,6 +800,16 @@ export function pageBuilder(route) {
         if (unset.length) {
             comp.removeAttributes(unset);
             return;
+        }
+        // a search box set to another list: that list's usual fields
+        if (comp.is("pb-search") && comp._pbSearch !== undefined && comp._pbSearch !== a["data-pb-search"]) {
+            comp._pbSearch = a["data-pb-search"];
+            const list = pageLists().find((l) => l.key == a["data-pb-search"]);
+            comp.addAttributes({ "data-pb-search-fields": list?.col ? defaultSearchFields(list.col).join(",") : "" });
+        }
+        if (comp.is("pb-list") && comp._pbPaginate !== (a["data-pb-paginate"] || "")) {
+            comp._pbPaginate = a["data-pb-paginate"] || "";
+            refreshTraits(comp);
         }
         const key = bindingKey(comp);
         if (comp._pbKey === key) {
@@ -644,6 +843,8 @@ export function pageBuilder(route) {
                     defineMemberTypes(ed);
                     defineWidgetTypes(ed, widgetCtx);
                     defineFormula(ed, formulaCtx);
+                    defineConditions(ed, formulaCtx);
+                    defineSearchTraits(ed);
                     defineColumnsTrait(ed, {
                         byName,
                         // own and related fields: { name: path, type }
@@ -782,6 +983,7 @@ export function pageBuilder(route) {
                     .forEach((c) => c.addAttributes({ "data-pb-access": "rules" }));
                 linkIds(comp); // unique ids for dialogs, tabs and menus
                 autofill(comp);
+                linkSearch(comp);
                 applySamples(comp);
                 ed.select(comp);
                 if (comp.is("pb-formula") && !comp.getAttributes()["data-pb-formula"]) {

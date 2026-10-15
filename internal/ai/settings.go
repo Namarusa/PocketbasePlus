@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Namarusa/PocketbasePlus/internal/secrets"
 )
 
 // Model is a configured model (Settings → AI models) with its provider client.
@@ -32,7 +35,10 @@ func (m *Model) Decide(ctx context.Context, req Request) (*Response, error) {
 
 // newProvider returns the client of a provider record.
 func newProvider(app core.App, p *core.Record) (Provider, error) {
-	key := p.GetString("api_key")
+	key, err := apiKey(app, p)
+	if err != nil {
+		return nil, err
+	}
 	if key == "" {
 		return nil, fmt.Errorf("the AI provider %q has no API key (Settings → AI providers)", p.GetString("name"))
 	}
@@ -81,8 +87,23 @@ func LoadModel(app core.App, id string) (*Model, error) {
 	}, nil
 }
 
-// keyHint shows the end of an API key ("…1a2b").
+// apiKey returns the key of a provider: as typed, or the value of the
+// secret it references ({{secret.OPENAI_KEY}}).
+func apiKey(app core.App, p *core.Record) (string, error) {
+	key := p.GetString("api_key")
+	if m := secretRefRegex.FindStringSubmatch(key); m != nil {
+		return secrets.Value(app, m[1])
+	}
+	return key, nil
+}
+
+var secretRefRegex = regexp.MustCompile(`^\{\{\s*secret\.([A-Za-z0-9_]+)\s*\}\}$`)
+
+// keyHint shows the end of an API key ("…1a2b"), or the secret it references.
 func keyHint(key string) string {
+	if m := secretRefRegex.FindStringSubmatch(key); m != nil {
+		return "→ " + m[1]
+	}
 	if key == "" {
 		return ""
 	}
@@ -98,6 +119,14 @@ func Register(app core.App) {
 		r := e.Record
 		r.Set("name", strings.TrimSpace(r.GetString("name")))
 		r.Set("api_key", strings.TrimSpace(r.GetString("api_key")))
+		if key := r.GetString("api_key"); strings.Contains(key, "{{") {
+			if !secretRefRegex.MatchString(key) {
+				return validation.Errors{"api_key": validation.NewError("invalid_key", "Enter the key, or one secret: {{secret.NAME}}.")}
+			}
+			if err := secrets.Check(e.App, key); err != nil {
+				return validation.Errors{"api_key": validation.NewError("unknown_secret", err.Error())}
+			}
+		}
 		r.Set("base_url", strings.TrimRight(strings.TrimSpace(r.GetString("base_url")), "/"))
 		if !r.IsNew() && r.Original().GetString("kind") != r.GetString("kind") {
 			n, _ := e.App.CountRecords(ModelsCollection, dbx.HashExp{"provider": r.Id})

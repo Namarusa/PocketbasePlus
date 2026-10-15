@@ -6,7 +6,7 @@ import { loadFunctions } from "../pocketbaseplus/functions.js";
 
 // the words of the templates (not variables)
 const keywords = new Set([
-    "if", "else", "end", "range", "with", "define", "template", "block", "break", "continue", "nil", "true", "false", "vars",
+    "if", "else", "end", "range", "with", "define", "template", "block", "break", "continue", "nil", "true", "false", "vars", "secret",
     "and", "call", "html", "index", "slice", "js", "len", "not", "or", "print", "printf", "println", "urlquery", "eq", "ne", "lt", "le", "gt", "ge",
 ]);
 let functionNames = null;

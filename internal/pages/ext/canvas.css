@@ -141,3 +141,31 @@ dialog.dialog::before {
     background: rgba(168, 85, 247, 0.1);
     border-radius: 4px;
 }
+
+/* hidden on the sample record by a condition (the published page drops it) */
+.gpp-cond-hidden {
+    opacity: 0.3 !important;
+    outline: 1px dashed #f59e0b !important;
+    outline-offset: -1px;
+}
+
+/* a paginated list: the pager follows it on the published page */
+[data-pb-paginate]::after {
+    content: "‹ Previous   1   2   3   Next ›   (pages of this list)";
+    display: block;
+    grid-column: 1 / -1;
+    padding: 6px;
+    font: 12px/1.6 system-ui, sans-serif;
+    text-align: center;
+    white-space: pre;
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.06);
+}
+[data-pb-paginate="more"]::after {
+    content: "Show more   (more records of this list)";
+}
+[data-pb-search],
+[data-pb-pager] {
+    outline: 1px dashed rgba(59, 130, 246, 0.6);
+    outline-offset: 2px;
+}
