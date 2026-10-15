@@ -141,7 +141,8 @@ func (e *Engine) action(re *core.RequestEvent) error {
 
 	info, _ := re.RequestInfo()
 	state := &actionState{ip: re.RealIP(), info: info, user: user}
-	res := e.Run(flow, trigger, RunOptions{Ctx: re.Request.Context(), Timeout: actionTimeout, action: state})
+	caller := &callerState{ip: state.ip, info: info, user: user}
+	res := e.Run(flow, trigger, RunOptions{Ctx: re.Request.Context(), Timeout: actionTimeout, action: state, caller: caller})
 
 	switch res.Status {
 	case StatusSuccess:
@@ -304,9 +305,9 @@ func stepRedirect(r *run, s Step) (any, any, error) {
 // --- API rules of the visitor ---------------------------------------------------------------
 
 // asVisitor reports whether a record step checks the API rules of the visitor:
-// in page action flows, unless turned off in the step.
+// in page action flows (and webhooks without token), unless turned off in the step.
 func (r *run) asVisitor(s Step) bool {
-	if r.action == nil {
+	if r.caller == nil {
 		return false
 	}
 	v, ok := s.Config["checkRules"].(bool)
@@ -320,8 +321,8 @@ func (r *run) visitorInfo(body map[string]any) *core.RequestInfo {
 		body = map[string]any{}
 	}
 	info := &core.RequestInfo{Context: core.RequestInfoContextDefault, Method: http.MethodPost, Query: map[string]string{}, Headers: map[string]string{}, Body: body}
-	if r.action != nil && r.action.user != nil {
-		info.Auth = r.action.user
+	if r.caller != nil && r.caller.user != nil {
+		info.Auth = r.caller.user
 	}
 	return info
 }

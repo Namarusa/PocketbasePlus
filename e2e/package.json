@@ -1,0 +1,12 @@
+{
+  "name": "pocketbaseplus-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser tests of PocketBasePlus (not part of the binary): node run.mjs",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.60.0"
+  }
+}

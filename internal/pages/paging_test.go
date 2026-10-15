@@ -48,13 +48,13 @@ func TestPaginationAndSearch(t *testing.T) {
 	if got := names(out); got != "Chair,Desk" {
 		t.Errorf("page 1: %s", got)
 	}
-	check("page 1", out, `<nav class="pb-pager" aria-label="Pages">`, `<span class="pb-pager-btn btn" aria-disabled="true" data-variant="ghost">‹ Previous</span>`,
-		`href="/shop?page=2#grid" data-variant="ghost" rel="next">Next ›</a>`, `data-variant="outline" aria-current="page">1</a>`, `1–2 of 5`, `.pb-pager{`)
+	check("page 1", out, `<nav class="pb-pager" aria-label="Pages">`, `<span class="pb-pager-btn btn" aria-disabled="true" data-variant="ghost" aria-label="Previous page">‹ <span class="pb-pager-word">Previous</span></span>`,
+		`href="/shop?page=2#grid" data-variant="ghost" rel="next" aria-label="Next page"><span class="pb-pager-word">Next</span> ›</a>`, `<span class="pb-pager-current">1 / 3</span>`, `data-variant="outline" aria-current="page">1</a>`, `1–2 of 5`, `.pb-pager{`)
 	out = render(src, url.Values{"page": {"3"}, "x": {"1"}})
 	if got := names(out); got != "Stool" {
 		t.Errorf("page 3: %s", got)
 	}
-	check("page 3", out, `href="/shop?page=2&amp;x=1#grid" data-variant="ghost" rel="prev">‹ Previous</a>`, `href="/shop?x=1#grid" data-variant="ghost">1</a>`, `5–5 of 5`, `aria-disabled="true" data-variant="ghost">Next ›</span>`)
+	check("page 3", out, `href="/shop?page=2&amp;x=1#grid" data-variant="ghost" rel="prev" aria-label="Previous page">‹ <span class="pb-pager-word">Previous</span></a>`, `href="/shop?x=1#grid" data-variant="ghost">1</a>`, `5–5 of 5`, `aria-disabled="true" data-variant="ghost" aria-label="Next page"><span class="pb-pager-word">Next</span> ›</span>`)
 	if out = render(src, url.Values{"page": {"9"}}); names(out) != "" || !strings.Contains(out, "<p>None</p>") {
 		t.Errorf("past the last page: the empty state\n%s", out)
 	}

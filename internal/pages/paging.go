@@ -2,6 +2,7 @@ package pages
 
 import (
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -38,9 +39,12 @@ const (
 // listState is what the page address and the page's search forms say about
 // the lists.
 type listState struct {
-	prefixed bool                // several lists page or search: "{key}_page"
+	prefixed bool                // several lists page, search or filter: "{key}_page"
 	fields   map[string][]string // list key → searched fields
 	pagers   map[string]*xhtml.Node
+	nodes    map[string]*xhtml.Node  // list key → the (top level) list
+	filters  map[string][]string     // list key → filtered fields (filters.go)
+	sorts    map[string][]sortOption // list key → the sort options of its filters
 }
 
 // listKey is the name of a list in the address.
@@ -63,16 +67,33 @@ func cleanKey(k string) string {
 // scanLists finds the lists that page or search (top level lists only: a
 // nested list repeats with each record), the search forms and the pagers.
 func (r *renderer) scanLists(body *xhtml.Node) {
-	st := &listState{fields: map[string][]string{}, pagers: map[string]*xhtml.Node{}}
+	st := &listState{fields: map[string][]string{}, pagers: map[string]*xhtml.Node{}, nodes: map[string]*xhtml.Node{},
+		filters: map[string][]string{}, sorts: map[string][]sortOption{}}
 	keys := map[string]bool{}
+	sortSrc := map[string]string{}
 	var visit func(n *xhtml.Node, inList bool)
 	visit = func(n *xhtml.Node, inList bool) {
 		if n.Type == xhtml.ElementNode {
 			if getAttr(n, attrList) != "" {
-				if !inList && getAttr(n, attrPaginate) != "" {
-					keys[listKey(n)] = true
+				if !inList {
+					if getAttr(n, attrPaginate) != "" {
+						keys[listKey(n)] = true
+					}
+					if st.nodes[listKey(n)] == nil {
+						st.nodes[listKey(n)] = n
+					}
 				}
 				inList = true
+			}
+			if hasAttr(n, attrFilters) && !inList {
+				k := cleanKey(getAttr(n, attrFilters))
+				keys[k] = true
+				for _, f := range strings.Split(getAttr(n, attrFilterFields), ",") {
+					if f = strings.TrimSpace(f); f != "" && len(st.filters[k]) < maxFilterFields && !slices.Contains(st.filters[k], f) {
+						st.filters[k] = append(st.filters[k], f)
+					}
+				}
+				sortSrc[k] = getAttr(n, attrSortOptions)
 			}
 			if hasAttr(n, attrSearch) && !inList {
 				k := cleanKey(getAttr(n, attrSearch))
@@ -93,6 +114,12 @@ func (r *renderer) scanLists(body *xhtml.Node) {
 	}
 	visit(body, false)
 	st.prefixed = len(keys) > 1
+	for k, src := range sortSrc {
+		if list := st.nodes[k]; list != nil && src != "" {
+			col, _ := listCollection(r.app, getAttr(list, attrList))
+			st.sorts[k] = r.parseSortOptions(col, src)
+		}
+	}
 	r.lists = st
 }
 
@@ -232,10 +259,14 @@ func (r *renderer) pager(n *xhtml.Node, key, mode string, page, perPage, total i
 	r.pagerCSS = true
 	btn := func(label, href, rel string, current bool) *xhtml.Node {
 		var a *xhtml.Node
+		class := "pb-pager-btn btn"
+		if _, err := strconv.Atoi(label); err == nil {
+			class += " pb-pager-num" // hidden on phones (the current page shows "3 / 56")
+		}
 		if href == "" {
-			a = elem("span", "class", "pb-pager-btn btn", "aria-disabled", "true", "data-variant", "ghost")
+			a = elem("span", "class", class, "aria-disabled", "true", "data-variant", "ghost")
 		} else {
-			a = elem("a", "class", "pb-pager-btn btn", "href", href, "data-variant", "ghost")
+			a = elem("a", "class", class, "href", href, "data-variant", "ghost")
 			if rel != "" {
 				setAttr(a, "rel", rel)
 			}
@@ -243,6 +274,22 @@ func (r *renderer) pager(n *xhtml.Node, key, mode string, page, perPage, total i
 				setAttr(a, "aria-current", "page")
 				setAttr(a, "data-variant", "outline")
 			}
+		}
+		// "‹ Previous": the word is hidden on phones
+		if arrow, word, ok := strings.Cut(label, " "); ok && (arrow == "‹" || word == "›") {
+			if arrow == "‹" {
+				a.AppendChild(textNode("‹ "))
+				w := elem("span", "class", "pb-pager-word")
+				w.AppendChild(textNode(word))
+				a.AppendChild(w)
+			} else {
+				w := elem("span", "class", "pb-pager-word")
+				w.AppendChild(textNode(arrow))
+				a.AppendChild(w)
+				a.AppendChild(textNode(" ›"))
+			}
+			setAttr(a, "aria-label", map[bool]string{true: "Previous page", false: "Next page"}[arrow == "‹"])
+			return a
 		}
 		a.AppendChild(textNode(label))
 		return a
@@ -275,6 +322,9 @@ func (r *renderer) pager(n *xhtml.Node, key, mode string, page, perPage, total i
 		nav.AppendChild(btn(strconv.Itoa(p), link(p), "", p == page))
 		last = p
 	}
+	current := elem("span", "class", "pb-pager-current")
+	current.AppendChild(textNode(strconv.Itoa(page) + " / " + strconv.Itoa(pages)))
+	nav.AppendChild(current)
 	nav.AppendChild(btn("Next ›", next, "next", false))
 	info := elem("span", "class", "pb-pager-info")
 	from := (page-1)*perPage + 1
@@ -336,7 +386,9 @@ func (r *renderer) searchForm(n *xhtml.Node) {
 			continue
 		}
 		for _, v := range vs {
-			n.AppendChild(elem("input", "type", "hidden", "name", k, "value", v))
+			if v != "" { // the empty fields of another form
+				n.AppendChild(elem("input", "type", "hidden", "name", k, "value", v))
+			}
 		}
 	}
 }
@@ -356,6 +408,8 @@ const pagerCSS = `
 .pb-pager-btn[aria-disabled]{opacity:.45;pointer-events:none}
 .pb-pager-gap{padding:0 4px;opacity:.6}
 .pb-pager-info{width:100%;text-align:center;font-size:.85em;opacity:.7}
+.pb-pager-current{display:none;padding:0 8px;font-weight:600}
+@media (max-width:480px){.pb-pager{flex-wrap:nowrap}.pb-pager .pb-pager-num,.pb-pager .pb-pager-gap,.pb-pager .pb-pager-word,.pb-pager .pb-pager-info{display:none}.pb-pager .pb-pager-current{display:inline}}
 `
 
 // pagerPlainCSS styles the pagers of the pages without the UI kit.

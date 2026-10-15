@@ -84,6 +84,7 @@ type renderer struct {
 	formulas   map[string]*template.Template
 	lists      *listState // pagination and search (paging.go)
 	pagerCSS   bool
+	filterCSS  bool
 }
 
 // pageView is what's needed to render a page.
@@ -122,6 +123,12 @@ func render(ctx context.Context, app core.App, p pageView, query url.Values, pre
 		p.CSS += pagerCSS
 		if p.Kit == nil {
 			p.CSS += pagerPlainCSS
+		}
+	}
+	if r.filterCSS {
+		p.CSS += filterCSS
+		if p.Kit == nil {
+			p.CSS += filterPlainCSS
 		}
 	}
 	if r.flash != nil {
@@ -246,6 +253,11 @@ func (r *renderer) walk(n *xhtml.Node, s scope, depth int) {
 		if hasAttr(n, attrSearch) && n.DataAtom == atom.Form {
 			r.searchForm(n)
 		}
+		if hasAttr(n, attrFilters) && n.DataAtom == atom.Form {
+			r.filterForm(n, s)
+			removeBindingAttrs(n)
+			return
+		}
 		if slug := getAttr(n, attrForm); slug != "" {
 			setAttr(n, "src", "/f/"+url.PathEscape(slug)+"/embed")
 		}
@@ -331,13 +343,21 @@ func (r *renderer) list(n *xhtml.Node, s scope, depth int) {
 	if depth > 0 || (mode != "pages" && mode != "more") {
 		mode = ""
 	}
+	sort := getAttr(n, attrSort)
 	if depth == 0 {
-		if search := r.searchFilter(col, key, params); search != "" {
-			if strings.TrimSpace(filter) != "" {
-				filter = "(" + filter + ") && (" + search + ")"
-			} else {
-				filter = search
+		// the visitor's search and filters (paging.go, filters.go)
+		for _, extra := range []string{r.searchFilter(col, key, params), r.filterExpr(col, key, params)} {
+			if extra == "" {
+				continue
 			}
+			if strings.TrimSpace(filter) != "" {
+				filter = "(" + filter + ") && (" + extra + ")"
+			} else {
+				filter = extra
+			}
+		}
+		if s := r.sortOf(key); s != "" {
+			sort = s
 		}
 	}
 	page, count, offset := 1, limit, 0
@@ -349,7 +369,7 @@ func (r *renderer) list(n *xhtml.Node, s scope, depth int) {
 		page = r.pageOf(key)
 		count = min(limit*page, r.budget)
 	}
-	records, err := r.find(col, filter, getAttr(n, attrSort), count, offset, params, rules)
+	records, err := r.find(col, filter, sort, count, offset, params, rules)
 	if err != nil {
 		r.fail(n, err.Error())
 		return

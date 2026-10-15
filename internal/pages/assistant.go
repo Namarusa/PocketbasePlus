@@ -30,7 +30,6 @@ const (
 	maxOutline       = 220
 	maxInlineHTML    = 7000
 	maxElementHTML   = 9000
-	defaultPageCSS   = "body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#222;line-height:1.5}"
 	previewWarnLabel = " (only shown in previews)"
 )
 
@@ -42,7 +41,7 @@ const pagesGuide = `Pages (get_page, propose_page, propose_page_change): web pag
   - Form: <iframe data-pb-form="contact" style="width:100%;height:640px;border:0"></iframe> (a form's slug).
   - Chart: <div data-pb-chart="bar|line|area|pie|donut" data-pb-collection="orders" data-pb-fn="count|sum|avg|min|max" data-pb-value="total" data-pb-group="status" data-pb-date="created" data-pb-precision="day|week|month" data-pb-range="7d|30d|90d|365d"></div>.
   - Members: data-pb-visible="guests|users|role:<id>" shows an element to some visitors; <form data-pb-action="<page action flow id>"> runs a flow with the form fields (trigger.form.<name>); <form data-pb-logout="/"> signs out; <div data-pb-message></div> shows the message of the last action.
-- Basecoat pages (kit "basecoat") use the kit's component classes (btn, btn-outline, btn-secondary, card, badge, alert, input, label, table); Tailwind utility classes aren't available, so lay out with inline styles. Plain pages: inline styles or CSS.
+- Pages use the site theme (kit "basecoat", older pages may be plain) and the kit's component classes (btn, btn-outline, btn-secondary, card, badge, alert, input, label, table); Tailwind utility classes aren't available, so lay out with inline styles. Plain pages: inline styles or CSS.
 - New pages are drafts (published false) unless the user asked to publish. Site parts (kind "part") are reusable headers and footers placed with <div data-pb-part="slug"></div>.
 - propose_page_change edits elements by ref (from get_page's outline): replace, before, after, append, prepend, remove; or "html" replaces the whole body. Keep the existing design: change only what's asked. The card shows the rendered result; binding errors come back to you to fix.`
 
@@ -56,17 +55,17 @@ func bindAssistant() {
 					"page":        str("Page id or slug"),
 					"element_ref": str("A ref of the outline: that element's HTML"),
 				}, "page")}, Run: toolGetPage},
-			{Def: ai.Tool{Name: "propose_page", Description: "Proposes a new page (or record page, or site part). Checked and previewed by the server. The user applies it.",
+			{Def: ai.Tool{Name: "propose_page", Description: "Proposes a new page (single page, collection page, single item page or site part); it uses the site theme. Checked and previewed by the server. The user applies it.",
 				Parameters: obj(map[string]any{
 					"title":             str("Page title"),
 					"slug":              str("Address: lowercase letters, digits and dashes (/slug)"),
-					"kind":              str("page (default) | record (one record per address: set record_collection) | part (site part)"),
-					"record_collection": str("Record pages: the collection"),
-					"record_filter":     str("Record pages: a filter the shown records must match (optional)"),
+					"kind":              str("page (default: a single page) | collection (lists a collection: set list_collection) | record (a single item page, one record per address: set record_collection) | part (site part)"),
+					"list_collection":   str("Collection pages: the collection listed"),
+					"record_collection": str("Single item pages: the collection"),
+					"record_filter":     str("Single item pages: a filter the shown records must match (optional)"),
 					"description":       str("Meta description (optional)"),
 					"html":              str("The body HTML (see the pages guide)"),
 					"css":               str("CSS (optional)"),
-					"kit":               boolean("Use the Basecoat UI kit (the site theme)"),
 					"published":         boolean("Publish it now (default false: a draft)"),
 					"access":            str("public (default) | users | roles"),
 					"roles":             strList("Role ids (access roles)"),
@@ -184,6 +183,8 @@ func pageKind(p *core.Record) string {
 	switch {
 	case p.GetString("kind") == kindPart:
 		return "part"
+	case p.GetString("kind") == kindCollection:
+		return "collection"
 	case p.GetString("record_collection") != "":
 		return "record"
 	}
@@ -390,16 +391,15 @@ func toolProposePage(c *assistant.ToolContext, args map[string]any) (any, error)
 	if _, err := c.App.FindFirstRecordByData(Collection, "slug", slug); err == nil {
 		return nil, fmt.Errorf("the slug %q is taken: pick another one", slug)
 	}
-	kit := args["kit"] == true
-	if kit {
-		page.Set("kit", kitBasecoat)
-	} else if page.GetString("css") == "" {
-		page.Set("css", defaultPageCSS)
-	}
+	// every new page uses the site theme (Pages → Theme)
+	page.Set("kit", kitBasecoat)
 	switch argStr(args, "kind") {
 	case "part":
 		page.Set("kind", kindPart)
 		page.Set("published", false)
+	case kindCollection:
+		page.Set("kind", kindCollection)
+		page.Set("list_collection", argStr(args, "list_collection"))
 	case "record":
 		if argStr(args, "record_collection") == "" {
 			return nil, errors.New("a record page needs record_collection")
@@ -427,14 +427,14 @@ func toolProposePage(c *assistant.ToolContext, args map[string]any) (any, error)
 	details := map[string]any{"address": pagePath(page), "published": page.GetBool("published")}
 	previewDetails(details, preview)
 	payload := map[string]any{}
-	for _, k := range []string{"title", "slug", "description", "html", "css", "published", "kit", "kind", "record_collection", "record_filter", "record_rules", "access", "roles"} {
+	for _, k := range []string{"title", "slug", "description", "html", "css", "published", "kit", "kind", "list_collection", "record_collection", "record_filter", "record_rules", "access", "roles"} {
 		payload[k] = page.Get(k)
 	}
 	state := "draft"
 	if page.GetBool("published") {
 		state = "published"
 	}
-	return c.Propose(actionPage, "New page “"+page.GetString("title")+"”", fmt.Sprintf("%s at %s (%s)", map[string]string{"page": "Page", "record": "Record page", "part": "Site part"}[pageKind(page)], pagePath(page), state), details, payload), nil
+	return c.Propose(actionPage, "New page “"+page.GetString("title")+"”", fmt.Sprintf("%s at %s (%s)", map[string]string{"page": "Single page", "collection": "Collection page", "record": "Single item page", "part": "Site part"}[pageKind(page)], pagePath(page), state), details, payload), nil
 }
 
 func toolProposePageChange(c *assistant.ToolContext, args map[string]any) (any, error) {
@@ -614,7 +614,7 @@ func applyPageProposal(ctx context.Context, app core.App, auth *core.Record, p m
 	}
 	_ = snapshot(app, page, by)
 	out := map[string]any{"link": "#/pages/" + page.Id, "label": "Open in the builder", "id": page.Id}
-	if page.GetBool("published") && pageKind(page) == "page" {
+	if k := pageKind(page); page.GetBool("published") && (k == "page" || k == "collection") {
 		out["url"] = pageURL(page.GetString("slug"), "")
 	}
 	return out, nil

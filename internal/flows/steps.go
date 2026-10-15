@@ -50,6 +50,7 @@ func init() {
 		"sign_in":       stepSignIn,
 		"sign_out":      stepSignOut,
 		"redirect":      stepRedirect,
+		"respond":       stepRespond,
 	}
 }
 
@@ -535,12 +536,12 @@ func stepSendEmail(r *run, s Step) (any, any, error) {
 	if len(recipients) == 0 {
 		return map[string]any{"to": to}, nil, errors.New("no valid recipient address")
 	}
-	if r.action != nil {
+	if r.caller != nil {
 		// page actions are started by visitors: the site can't be used to send many emails
 		if len(recipients) > maxActionRecipients {
 			return map[string]any{"to": to}, nil, &rejectError{message: "Too many recipients."}
 		}
-		if !allowActionEmails(r.action.ip, len(recipients)) {
+		if !allowActionEmails(r.caller.ip, len(recipients)) {
 			return map[string]any{"to": to}, nil, &rejectError{message: "Too many emails sent, try again later."}
 		}
 	}
@@ -584,7 +585,7 @@ const AllowPrivateHTTPEnv = httpcall.AllowPrivateEnv
 
 // httpLimit refuses the requests of a page action when the visitor made too many.
 func (r *run) httpLimit() error {
-	if r.action != nil && !allowActionHTTP(r.action.ip) {
+	if r.caller != nil && !allowActionHTTP(r.caller.ip) {
 		return &rejectError{message: "Too many requests, try again later."}
 	}
 	return nil

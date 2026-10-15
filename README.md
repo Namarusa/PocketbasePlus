@@ -64,6 +64,7 @@ make build   # ./pocketbaseplus: single binary, everything embedded
 make build-windows   # pocketbaseplus.exe: the same for Windows 64-bit
 make release VERSION=v0.1.0   # dist/: Linux (amd64, arm64, armv7), Windows, macOS archives + SHA256SUMS
 make test    # Go tests
+make e2e     # browser tests (Node 22+, e2e/): pages, page builder, secrets, webhooks
 ```
 
 First run: open the installer link printed in the console (or run `./pocketbaseplus superuser upsert EMAIL PASS`), then set
@@ -289,15 +290,23 @@ argument selected, and a value picked next replaces it.
     - *Before save* runs inside the save (15s max) and can change the record ("Update triggering record") or
       refuse it ("Stop / reject").
   - **Manual**: a "Run flow" button in the record popup of the selected collection, or Test run.
-  - **Webhook**: `POST|GET /api/flows/webhook/{id}?token=...` (or an `X-Flow-Token` header; the token is
-    removed from the logged request URL). With "wait" it
-    responds with the last step output.
+  - **Webhook**: an endpoint of the app, `/api/flows/webhook/{id}` or a readable address `/hooks/{name}`
+    (POST, GET, PUT, PATCH, DELETE or any). The body (JSON, form fields or text), query and headers are
+    `trigger.body`, `trigger.query` and `trigger.headers`. **Who can call it**:
+    - *Secret token* (default): `?token=...` or an `X-Flow-Token` header (removed from the logged request URL).
+    - *Public*, *Signed-in users* or some *Roles*: the caller signs in with a PocketBase auth token
+      (`Authorization` header), or with their session for calls from the pages of the site. They are
+      `trigger.user`; the record steps check *their* API rules, and a visitor can call 60 times a minute.
+
+    With *Wait for the result*, the caller gets the response of a **Respond** step (status, headers, and JSON, text,
+    HTML or a redirect; HTML values are escaped and the page can't run scripts), else the last step output as
+    JSON.
   - **Schedule**: cron (UTC).
   - **Another flow**: called by a "Run another flow" step.
   - **Page action**: a button or form of the [pages](#members-sign-in-and-page-actions) (`POST /api/flows/action/{id}`,
     same-site requests only). Who can run it: *Public*, *Signed-in users* or some *Roles*. The flow gets the form
     fields (`trigger.form.<name>`), the signed-in visitor (`trigger.user`, null for guests), the record of the button
-    in a list or on a record page (`trigger.record`, signed by the server so visitors can't swap it), the page
+    in a list or on a single item page (`trigger.record`, signed by the server so visitors can't swap it), the page
     (`trigger.page`) and `?next` (`trigger.next`). It runs while the visitor waits (30 s max).
 - **Steps:**
   - condition (all/any rules → *If yes* / *If no* branches)
@@ -553,7 +562,7 @@ Optional temperature and max tokens. System One models can't generate text.
   logs, explains the error and proposes the fixed flow → Apply → it proposes a test run.
 - **Pages** (with the Pages module, which adds these tools itself: removing the module removes them): `get_page` (the
   settings, an outline of the elements with a ref, their bindings and text, and the HTML when small or of one
-  element), `propose_page` (a new page, record page or site part; a draft unless you asked to publish) and
+  element), `propose_page` (a new single page, collection page, single item page or site part; a draft unless you asked to publish) and
   `propose_page_change` (settings, edits of elements by ref: replace, before, after, append, prepend, remove, or the
   whole HTML, and CSS). Proposals are checked and rendered by the server: binding errors (unknown collection, invalid
   filter or formula) go back to the assistant to fix, and the card shows the rendered page with sample records.
@@ -668,11 +677,30 @@ flows, email automations and revisions see it (the revisions show "Form: <name>"
 ## Pages
 
 An optional module: the **Pages** tab builds web pages with a drag and drop editor ([GrapesJS](https://grapesjs.com),
-embedded) and publishes them on your site. Blocks in the **Data** group show your collections:
+embedded) and publishes them on your site. **New page** asks what kind of page you want:
+
+- **Single page** (`/slug`): a standalone page (home, about, contact…). Layouts: Blank, Landing (hero, features,
+  testimonials, FAQ, call to action), App with sidebar.
+- **Collection page** (`/slug`): lists the records of a collection, ready to use: a search box, filters and pages
+  linked to the list, the cards filled with the collection's fields. Layouts: Cards, Table, List. It can create its
+  single item page at the same time, and the cards link to it.
+- **Single item page** (`/slug/{id}`): shows one record per address. Layout: Detail.
+- **Site part**: a header, footer or sidebar placed on several pages.
+
+Every page uses the site theme (**Pages → Theme**): there's no styling choice per page. Blocks in the **Data** group
+show your collections:
 
 - **Collection list**: the records of a collection (filter, sort, max records). Design one card (the *item*) and it's
   repeated for each record; the *empty state* shows when there are none. Picking the collection fills the card with
   its name, image and another field.
+  - **Filter** and **Order** are picked, not typed: rules like *published is yes*, *price ≥ 10*, *brand → country is
+    “FR”*, *created is on or after the start of this month*, matching all or any of them, then the order (*price,
+    highest first, then name A–Z*, or random). A rule can compare with **dynamic values**: the signed-in visitor (*owner
+    is the visitor*, or one of their fields), the record of the page (the card around a nested list, or the record of a
+    single item page: *category is its category*), a parameter of the address (*brand is ?brand*), or a date (now,
+    today, this month…). The editor shows how many records match (and a few of them) as you go. *Edit as text* keeps
+    the PocketBase syntax for the rest (parentheses, "and" mixed with "or"). The same editor sets the filter of the
+    charts and the records a single item page shows.
   - **Pagination**: *Pages* adds a pager after the list (‹ Previous 1 2 … 56 Next ›, "5–8 of 221"), *Show more* a
     button that shows the next records below; *Per page* sets how many. To place the pager elsewhere, drop the
     **Pagination** block where it goes. The pages are links (`?page=2`), so they work without JavaScript, can be
@@ -681,17 +709,22 @@ embedded) and publishes them on your site. Blocks in the **Data** group show you
     e.g. `brand → name`; the usual ones are ticked when you drop it). The visitor's words must each be found in one
     of the fields (`pika xy` finds "Pikachu" numbered XY95), ignoring case, combined with the list's filter and API
     rules; hidden fields can't be searched. The search is in the address (`?q=pika`) and is kept while paging.
-  - When several lists of a page page or search, their parameters take the list's name (`cards_page`, `cards_q`): the
+  - **Filters**: drop it near the list and tick the fields to filter by: a choice field, yes/no, a related record
+    (the ones the visitor may see), a number (min and max), a date (from and to), or a text (one of its values, or
+    "contains" when there are more than 100). *Sort choices* add a "Sort by" menu. The visitor's choices show as
+    removable chips with a *Clear* link, combine with the search and the list's filter, and stay in the address
+    (`?f.kind=seat&f.price_min=50&sort=-price`) while paging.
+  - When several lists of a page page, search or filter, their parameters take the list's name (`cards_page`, `cards_q`): the
     collection name, or the list's **Address name** to tell apart two lists of the same collection.
-- **Field** / **Field image**: a field of the current record (the card's record, or the record of a record page).
+- **Field** / **Field image**: a field of the current record (the card's record, or the record of a single item page).
   Dates can show the date, date and time, or time; rich text keeps its formatting; relations show the related names.
-- **Record link**: links each card to a **record page**, a page showing one record per address (`/{slug}/{id}`),
-  created with "New page" → Record page. Its optional filter (e.g. `published = true`) gives a 404 for other records.
+- **Record link**: links each card to a **single item page**, a page showing one record per address (`/{slug}/{id}`),
+  created with "New page" → Single item page. Its optional filter (e.g. `published = true`) gives a 404 for other records.
 - **Record table** (UI kit): select the table (or any of its cells) for its **Columns** setting: move a column left
   or right, remove it, or add one from the collection's fields or its related records' fields (the header and the cell stay together). Each cell's
   field can also be changed in its own settings, and the headers are editable text.
-- **Any element of a card** (or of a record page) can show the record's data from its settings, not only the Field
-  blocks: a text or heading (*Show field*), an image (*Image field*), a link or button (*Record page*, or *Or link
+- **Any element of a card** (or of a single item page) can show the record's data from its settings, not only the Field
+  blocks: a text or heading (*Show field*), an image (*Image field*), a link or button (*Single item page*, or *Or link
   field*: a URL, email or file field becomes the link's target while its text stays, e.g. a "Website" button).
 - **Related records**: every field setting also lists the fields of the related records, as `brand → name` (the
   binding is `brand.name`; up to two relations, e.g. `order.customer.email`). Several related records show their
@@ -736,7 +769,7 @@ embedded) and publishes them on your site. Blocks in the **Data** group show you
   the styles panel and desktop/tablet/phone views. The canvas shows sample records; **Preview** opens the saved page
   with your data (drafts too, for an hour).
 
-Pages are published at `/{slug}` (record pages at `/{slug}/{id}`), and one page can be the **home page**, served at
+Pages are published at `/{slug}` (single item pages at `/{slug}/{id}`), and one page can be the **home page**, served at
 `/` (its slug redirects there). They're rendered by the server: fast, indexed by search engines, no JavaScript needed.
 
 - The app's own addresses always win: `/api`, `/_` (dashboard), `/f` (forms), `/dashboards`, `/email` and `/p` can't
@@ -768,7 +801,7 @@ Like Budibase's screen roles and button actions, built on the app's roles (Permi
     the collection's list rule allows (none for a superusers-only collection), and hide the fields the visitor's
     roles can't read; relations only name the records they can view. *Page is the gate* (existing lists) shows the
     list to everyone who can open the page, as before;
-  - record pages with **Apply the view rule** (the default for new record pages): a record the visitor can't view
+  - single item pages with **Apply the view rule** (the default for new ones): a record the visitor can't view
     gets a 404 (guests are asked to sign in);
   - in Page action flows, the get / create / update / delete record steps **check the API rules of the visitor** by
     default (list, create, update, delete rules, plus the field permissions and presets of their roles); refused,
@@ -804,10 +837,10 @@ using it.
   it in place.
 - Place a part with the **Site parts** blocks. In the editor it shows as placed (orange outline); its toolbar has
   **Edit** (opens the part, after saving the page) and **Unlink** (an editable copy for this page only).
-- New pages from the Landing, Catalog, App with sidebar and Record detail templates offer to use the site's parts
+- New pages from the Landing, App with sidebar, collection and Detail layouts offer to use the site's parts
   (matched by name: header/navbar, footer, sidebar) instead of new copies.
 - On the published page the part's HTML and CSS replace the placeholder; its collection lists and fields show the
-  data of the page (e.g. a record page). Parts are never published on their own and don't nest. They're listed under
+  data of the page (e.g. a single item page). Parts are never published on their own and don't nest. They're listed under
   **Site parts** in the Pages sidebar and have their own History.
 
 ### Charts
@@ -849,7 +882,7 @@ The **Dates** blocks are form fields like shadcn/ui's Calendar and Date Picker, 
 
 ### Basecoat UI kit
 
-New pages use [Basecoat UI](https://basecoatui.com) (shadcn/ui components in plain HTML/CSS), embedded in the app:
+Pages use [Basecoat UI](https://basecoatui.com) (shadcn/ui components in plain HTML/CSS), embedded in the app:
 
 - **Components**: button (plain, with an icon before or after, icon only, all variants, button group), light / dark
   toggle, badge, alert, card, avatar, table, accordion, tabs, dialog, dropdown menu, popover, tooltip, breadcrumb,
@@ -861,8 +894,6 @@ New pages use [Basecoat UI](https://basecoatui.com) (shadcn/ui components in pla
   settings, a toggle button in the top bar, the link of the current page highlighted).
 - **Data**: record cards, record table, record FAQ, record items and avatar field, bound to a collection like the
   collection list.
-- **Templates** in "New page": Blank, Landing page, Catalog (record cards), App with sidebar, Record detail (record
-  pages), or a classic page without the kit.
 - **Pages → Theme**: the site theme of these pages: style (Vega, Nova, Maia, Lyra, Mira, Luma, Sera, Rhea), light,
   dark or auto (the visitor's system setting, followed live), font (Geist, embedded, or the system font), primary color, corner radius, and an optional pasted shadcn/ui
   theme (CSS variables), with a live preview in light and dark. With a light / dark toggle on a page, the visitor's
@@ -874,8 +905,8 @@ New pages use [Basecoat UI](https://basecoatui.com) (shadcn/ui components in pla
   removed). Dialogs open with the browser's invoker commands
   (`command="show-modal"`, current browsers), without any script. In the editor, hidden tabs, menus and dialogs are
   shown so they can be edited.
-- Pages built before the kit keep their look (its base styles reset headings, margins and images); the kit can be
-  turned on or off in each page's settings.
+- Pages built before the kit keep their look (its base styles reset headings, margins and images); their settings
+  offer **Use the site theme** (History keeps the previous version).
 
 ### Offline deployment
 

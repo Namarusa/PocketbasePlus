@@ -20,3 +20,14 @@ func TestTemplateVariables(t *testing.T) {
 		t.Fatalf("want %s, got %s", want, got)
 	}
 }
+
+func TestSecretsAreRefused(t *testing.T) {
+	for _, parts := range [][3]string{{"Key {{secret.KEY}}", "", ""}, {"", "<p>{{secret.KEY}}</p>", ""}, {"", "", "{{upper secret.KEY}}"}} {
+		if err := Validate(parts[0], parts[1], parts[2]); err == nil || !strings.Contains(err.Error(), "secrets can only be used") {
+			t.Errorf("%v: %v", parts, err)
+		}
+	}
+	if _, err := TemplateVariables("{{secret.KEY}}", "", ""); err == nil || !strings.Contains(err.Error(), "secrets can only be used") {
+		t.Errorf("variables: %v", err)
+	}
+}

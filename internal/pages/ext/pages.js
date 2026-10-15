@@ -1,8 +1,8 @@
 // Pages: list of the pages built with the visual builder, published at
-// /{slug} (and /{slug}/{id} for record pages), the home page at /.
+// /{slug} (and /{slug}/{id} for single item pages), the home page at /.
 
 import { field, handleError, page, select, sidebar, switchInput, userCollections } from "../pocketbaseplus/lib.js";
-import { templates } from "./kit.js";
+import { pageTypes, templates } from "./kit.js";
 
 export const shared = store({ pages: [], loaded: false });
 let loading = null;
@@ -11,7 +11,7 @@ export function loadPages() {
     if (!loading) {
         loading = app.pb
             .collection("pages")
-            .getFullList({ sort: "title", fields: "id,title,slug,published,home,record_collection,kind,access,roles,updated", requestKey: null })
+            .getFullList({ sort: "title", fields: "id,title,slug,published,home,record_collection,list_collection,kind,access,roles,updated", requestKey: null })
             .then((list) => (shared.pages = list))
             .catch(handleError)
             .finally(() => {
@@ -37,7 +37,7 @@ export function pagesSidebar() {
                 ...shared.pages.filter((p) => !isPart(p)).map((p) => ({
                     href: "#/pages/" + p.id,
                     label: p.title,
-                    icon: p.home ? "ri-home-4-line" : p.record_collection ? "ri-file-list-3-line" : "ri-pages-line",
+                    icon: pageIcon(p),
                     after: t.span(
                         { className: "flex gap-5" },
                         isProtected(p) ? t.i({ className: "ri-lock-line txt-hint", title: "Members only" }) : null,
@@ -72,7 +72,7 @@ export function siteParts() {
 }
 
 // the first path segments of the app's routes: those pages stay under /p/ (as on the server)
-const reservedSlugs = new Set(["api", "p", "f", "dashboards", "email"]);
+const reservedSlugs = new Set(["api", "p", "f", "dashboards", "email", "hooks"]);
 
 /** The address of the page with this slug (and record id). */
 export const pageURL = (slug, id = "") => (reservedSlugs.has(slug) ? "/p/" : "/") + slug + (id ? "/" + id : "");
@@ -89,44 +89,100 @@ export function slugify(s) {
         .slice(0, 60) || "page";
 }
 
-const starter = (title) => `<section style="padding:64px 24px;text-align:center;font-family:system-ui,sans-serif">
-<h1 style="font-size:40px;margin:0 0 12px">${title.replace(/[<>&"]/g, "")}</h1>
-<p style="font-size:18px;color:#555;margin:0">Drag blocks from the right panel to build the page.</p></section>`;
+/** The type of a page: single, collection, item (one record per address) or part. */
+export function pageType(p) {
+    if (p.kind == "part") {
+        return "part";
+    }
+    if (p.kind == "collection") {
+        return "collection";
+    }
+    return p.record_collection ? "item" : "single";
+}
 
-const recordStarter = () => `<section style="padding:48px 24px;max-width:960px;margin:0 auto;font-family:system-ui,sans-serif">
-<h1 data-pb-field="" style="font-size:36px;margin:0 0 16px">{field}</h1>
-<p data-pb-field="" style="font-size:18px;color:#555">{field}</p></section>`;
+const typeIcons = { single: "ri-pages-line", collection: "ri-gallery-view-2", item: "ri-file-list-2-line", part: "ri-layout-top-2-line" };
+export const pageIcon = (p) => (p.home ? "ri-home-4-line" : typeIcons[pageType(p)]);
+
+const escapeHTML = (s) => String(s).replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]);
+
+/** Radio cards: the types of pages, the layouts. */
+function choiceCards(items, value, onchange, className = "") {
+    return t.div(
+        { className: "gp-ai-cards gpp-choice-cards " + className },
+        items.map((x) =>
+            t.label(
+                { className: () => `gp-ai-card ${value() == x.id ? "active" : ""}` },
+                t.input({ type: "radio", name: className || "choice", value: x.id, checked: () => value() == x.id, onchange: () => onchange(x.id) }),
+                t.span({ className: "gp-ai-card-title" }, t.i({ className: x.icon, ariaHidden: true }), x.label),
+                x.hint || x.address ? t.small({ className: "txt-hint" }, [x.hint, x.address ? `(${x.address})` : ""].filter(Boolean).join(" ")) : null,
+            )
+        ),
+    );
+}
+
+const extBase = app.pb.buildURL("/_/extensions/pocketbaseplus-pages/");
 
 function newPageModal() {
-    const data = store({ title: "", kind: "page", template: "blank", collection: "", collections: [], useParts: true, isSaving: false });
+    if (!document.querySelector(`link[href="${extBase}builder.css"]`)) {
+        document.head.appendChild(t.link({ rel: "stylesheet", href: extBase + "builder.css" }));
+    }
+    const data = store({ title: "", type: "single", layout: "blank", collection: "", collections: [], useParts: true, withItem: true, isSaving: false });
     const available = siteParts();
-    // the site parts the chosen template can use
-    const usable = () => (choices().find((x) => x.id == data.template)?.parts || []).filter((r) => available[r]);
-    const choices = () => templates.filter((x) => x.kind == "any" || x.kind == data.kind);
+    const layouts = () => templates.filter((x) => x.type == data.type);
+    const layout = () => layouts().find((x) => x.id == data.layout) || layouts()[0];
+    // the site parts the chosen layout can use
+    const usable = () => (layout()?.parts || []).filter((r) => available[r]);
+    const needsCollection = () => data.type == "collection" || data.type == "item";
+    const collection = () => data.collections.find((c) => c.id == data.collection);
+    // the single item page the cards of a collection page link to
+    const itemPage = () => shared.pages.find((p) => p.record_collection && p.record_collection == data.collection);
     userCollections().then((list) => (data.collections = list.filter((c) => c.type != "view"))).catch(handleError);
+    if (!shared.loaded) {
+        loadPages();
+    }
+
+    const parts = () => {
+        const o = {};
+        if (data.useParts) {
+            usable().forEach((r) => (o[r] = available[r].slug));
+        }
+        return o;
+    };
+    // the lists of new pages show what the visitor may read (API rules)
+    const withRules = (html) => html.replace(/data-pb-list=/g, 'data-pb-access="rules" data-pb-list=');
 
     async function create() {
         data.isSaving = true;
         try {
-            const recordPage = data.kind == "record";
-            const tpl = choices().find((x) => x.id == data.template) || choices()[0];
-            const o = {};
-            if (data.useParts) {
-                usable().forEach((r) => (o[r] = available[r].slug));
+            const col = collection();
+            const slug = slugify(data.title);
+            // a collection page without a single item page: create it too (its cards link to it)
+            if (data.type == "collection" && data.withItem && !itemPage()) {
+                const detail = templates.find((x) => x.id == "detail");
+                await app.pb.collection("pages").create({
+                    title: `${data.title} (item)`,
+                    slug: slug + "-item",
+                    published: false,
+                    record_collection: col.id,
+                    kit: "basecoat",
+                    html: withRules(detail.html(parts())),
+                    record_rules: true,
+                });
             }
             const rec = await app.pb.collection("pages").create({
                 title: data.title,
-                slug: slugify(data.title),
+                slug,
                 published: false,
-                record_collection: recordPage ? data.collection : "",
-                kind: data.kind == "part" ? "part" : "",
-                kit: tpl.kit ? "basecoat" : "",
-                // the lists of new pages show what the visitor may read (API rules)
-                html: (tpl.html ? tpl.html(o) : recordPage ? recordStarter() : starter(data.title)).replace(/data-pb-list=/g, 'data-pb-access="rules" data-pb-list='),
-                record_rules: recordPage,
+                kind: data.type == "part" ? "part" : data.type == "collection" ? "collection" : "",
+                record_collection: data.type == "item" ? col.id : "",
+                list_collection: data.type == "collection" ? col.id : "",
+                // every page uses the site theme (Pages → Theme)
+                kit: "basecoat",
+                html: withRules(layout().html(parts(), { title: escapeHTML(data.title), collection: col?.name || "" })),
+                record_rules: data.type == "item",
             });
             app.modals.close(modal);
-            loadPages();
+            await loadPages();
             window.location.hash = "#/pages/" + rec.id;
         } catch (err) {
             handleError(err);
@@ -136,53 +192,72 @@ function newPageModal() {
     }
 
     const modal = t.div(
-        { className: "modal popup sm" },
+        { className: "modal popup gpp-new-page" },
         t.header({ className: "modal-header" }, t.h5({ className: "m-auto" }, "New page")),
         t.form(
             { id: "gpNewPage", className: "modal-content", onsubmit: (e) => (e.preventDefault(), create()) },
             field({ label: "Title" }, t.input({ type: "text", required: true, autofocus: true, placeholder: "e.g. Our products", value: () => data.title, oninput: (e) => (data.title = e.target.value) })),
-            field({ label: "Type" }, select({
-                options: [
-                    { value: "page", label: "Page (/slug)" },
-                    { value: "record", label: "Record page: one record per URL (/slug/id)" },
-                    { value: "part", label: "Site part: header, footer, sidebar... placed on several pages" },
-                ],
-                value: () => data.kind,
-                onchange: (v) => {
-                    data.kind = v;
-                    data.template = choices()[0].id;
-                },
-            })),
-            field({ label: "Template", hint: "Basecoat UI templates use the components and the site theme (Pages → Theme)." }, select({
-                options: () => choices().map((x) => ({ value: x.id, label: x.label })),
-                value: () => data.template,
-                onchange: (v) => (data.template = v),
-            })),
+            t.label({ className: "gp-label" }, "What kind of page?"),
+            choiceCards(pageTypes, () => data.type, (v) => {
+                data.type = v;
+                data.layout = layouts()[0].id;
+            }, "gpp-types"),
+            () => needsCollection()
+                ? t.div(
+                    { rid: "collection" },
+                    field({
+                        label: "Collection",
+                        hint: data.type == "item" ? "The page shows the record of its address. Collection pages link to it." : "The records the page lists, with a search box, filters and pages.",
+                    }, select({
+                        required: true,
+                        placeholder: "- Select collection -",
+                        options: () => data.collections.map((c) => ({ value: c.id, label: c.name })),
+                        value: () => data.collection,
+                        onchange: (v) => (data.collection = v),
+                    })),
+                    () => data.type == "collection" && data.collection
+                        ? t.div(
+                            { rid: "item" + data.collection, className: "m-b-sm" },
+                            itemPage()
+                                ? t.div({ className: "field-help" }, `The cards link to its single item page “${itemPage().title}”.`)
+                                : switchInput(data, "withItem", `Also create its single item page (${pageURL(slugify(data.title || "page") + "-item", "{id}")}), linked from the cards`),
+                        )
+                        : t.div({ rid: "noitem" }),
+                )
+                : t.div({ rid: "nocollection" }),
+            t.label({ className: "gp-label" }, "Layout"),
+            () => t.div({ rid: "layouts-" + data.type }, choiceCards(layouts(), () => layout()?.id, (v) => (data.layout = v), "gpp-layouts")),
             () => usable().length
                 ? t.div(
-                    { rid: "parts" + usable().join(), className: "m-b-sm" },
+                    { rid: "parts" + usable().join(), className: "m-t-sm" },
                     switchInput(data, "useParts", "Use the site parts: " + usable().map((r) => available[r].title).join(", ")),
                 )
                 : null,
-            () => data.kind == "record"
-                ? field({ label: "Collection", hint: "The fields of the page show the record of the URL. Link to it from a collection list." }, select({
-                    required: true,
-                    placeholder: "- Select collection -",
-                    options: () => data.collections.map((c) => ({ value: c.id, label: c.name })),
-                    value: () => data.collection,
-                    onchange: (v) => (data.collection = v),
-                }))
-                : null,
+            t.div({ className: "field-help m-t-sm" }, "Every page uses the site theme: colors, fonts and light / dark mode are set in Pages → Theme."),
         ),
         t.footer(
             { className: "modal-footer" },
             t.button({ type: "button", className: "btn transparent secondary m-r-auto", onclick: () => app.modals.close(modal) }, t.span({ className: "txt" }, "Cancel")),
-            t.button({ type: "submit", "html-form": "gpNewPage", className: () => `btn expanded ${data.isSaving ? "loading" : ""}`, disabled: () => data.isSaving || !data.title || (data.kind == "record" && !data.collection) }, t.span({ className: "txt" }, "Create")),
+            t.button({ type: "submit", "html-form": "gpNewPage", className: () => `btn expanded ${data.isSaving ? "loading" : ""}`, disabled: () => data.isSaving || !data.title || (needsCollection() && !data.collection) }, t.span({ className: "txt" }, "Create")),
         ),
     );
     modal.onafterclose = () => modal.remove();
     document.body.appendChild(modal);
     app.modals.open(modal);
+}
+
+/** "Collection page · products", "Single item page · products", "Home page"... */
+export function typeLabel(p, collections = []) {
+    const name = (id) => collections.find((c) => c.id == id)?.name || "?";
+    switch (pageType(p)) {
+        case "part":
+            return "Site part";
+        case "collection":
+            return `Collection page · ${name(p.list_collection)}`;
+        case "item":
+            return `Single item page · ${name(p.record_collection)}`;
+    }
+    return p.home ? "Home page" : "Single page";
 }
 
 export function pagePages() {
@@ -207,7 +282,7 @@ export function pagePages() {
             breadcrumbs: ["Pages"],
             buttons: t.button({ type: "button", className: "btn expanded-lg", onclick: newPageModal }, t.i({ className: "ri-add-line", ariaHidden: true }), t.span({ className: "txt" }, "New page")),
         },
-        t.p({ className: "txt-hint m-t-0" }, "Pages designed with a drag and drop builder and published on your site. Collection lists, fields and record pages show your data, rendered by the server (visitors don't need access to the collections: only the fields you place are shown)."),
+        t.p({ className: "txt-hint m-t-0" }, "Pages designed with a drag and drop builder and published on your site. Collection pages, single item pages, lists and fields show your data, rendered by the server (visitors don't need access to the collections: only the fields you place are shown)."),
         t.div(
             { className: "gp-table-wrap" },
             t.table(
@@ -223,10 +298,8 @@ export function pagePages() {
                     return shared.pages.map((p) =>
                         t.tr(
                             { rid: p.id + p.updated + data.collections.length },
-                            t.td(null, t.a({ href: "#/pages/" + p.id, className: "txt-bold flex gap-5" }, t.i({ className: isPart(p) ? "ri-layout-top-2-line" : p.home ? "ri-home-4-line" : "ri-pages-line", ariaHidden: true }), t.span(null, p.title), isProtected(p) ? t.i({ className: "ri-lock-line txt-hint", ariaHidden: true, title: "Members only" }) : null)),
-                            t.td({ className: "txt-hint" }, isPart(p) ? "Site part" : p.record_collection
-                                ? `Record page of ${data.collections.find((c) => c.id == p.record_collection)?.name || "?"}`
-                                : p.home ? "Home page" : "Page"),
+                            t.td(null, t.a({ href: "#/pages/" + p.id, className: "txt-bold flex gap-5" }, t.i({ className: pageIcon(p), ariaHidden: true }), t.span(null, p.title), isProtected(p) ? t.i({ className: "ri-lock-line txt-hint", ariaHidden: true, title: "Members only" }) : null)),
+                            t.td({ className: "txt-hint" }, typeLabel(p, data.collections)),
                             t.td(null, isPart(p)
                                 ? t.span({ className: "txt-hint txt-sm" }, "Placed on pages")
                                 : p.published && !p.record_collection

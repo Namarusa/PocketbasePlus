@@ -1,4 +1,4 @@
-.PHONY: dev build build-windows release test
+.PHONY: dev build build-windows release test e2e
 
 VERSION ?= dev
 LDFLAGS := -s -w
@@ -37,3 +37,7 @@ release:
 
 test:
 	go test ./...
+
+# browser tests (Node 22+): the first run installs Playwright and its Chromium
+e2e:
+	cd e2e && npm install --no-audit --no-fund && npx playwright install chromium && node run.mjs

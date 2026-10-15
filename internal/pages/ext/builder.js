@@ -4,13 +4,14 @@
 
 import { api, field, handleError, select, switchInput, textInput, userCollections } from "../pocketbaseplus/lib.js";
 import { applyCanvasKit, applyKitTraits, defineKitPageTrait, defineKitTraits, kitClasses, linkIds, setKitBlocks, toggleCanvasMode } from "./kit.js";
-import { loadPages, pagePath, pageURL, shared, slugify } from "./pages.js";
+import { loadPages, pagePath, pageURL, shared, slugify, typeLabel } from "./pages.js";
 import { applyPartsCSS, definePartType, loadParts, partOf, refreshPartTrait, saveAsPartModal, setPartBlocks, unlinkPart } from "./parts.js";
 import { addBlockSearch } from "./blocksearch.js";
 import { defineWidgetTypes, refreshChartTraits, refreshWidgets, setWidgetBlocks } from "./widgets.js";
 import { addColumnsTrait, defineColumnsTrait } from "./tablecols.js";
 import { clearDraft, historyModal, offerDraft, storeDraft } from "./history.js";
 import { applyConditions, defineConditions } from "./conditions.js";
+import { defineRecordsTraits, filterSentence, recordsModal } from "./records.js";
 import { applyDynamic, defineFormula, dynamicValues, formulaModal, formulaSample } from "./formula.js";
 import { accessLabel, addVisibleTrait, applyViewAs, defineMemberTypes, loadMembers, members, refreshMemberTraits, setMemberBlocks, viewerCanOpen, viewerOptions } from "./members.js";
 
@@ -203,6 +204,8 @@ export function pageBuilder(route) {
             collections = cols;
             forms = formList;
             data.page = { ...rec, kit: rec.kit == "basecoat", isPart: rec.kind == "part", access: rec.access || "public", roles: rec.roles || [] };
+            // never opened in the builder (just created): its lists, search boxes and fields are filled when it loads
+            data.fresh = !rec.project;
             app.store.title = rec.title;
         } catch (err) {
             handleError(err);
@@ -291,6 +294,45 @@ export function pageBuilder(route) {
         return out;
     }
 
+    /** What the filters look like in the canvas (the server fills them for the visitors). */
+    function filtersMock(comp) {
+        const a = comp.getAttributes();
+        const list = pageLists().find((l) => l.key == a["data-pb-filters"]);
+        const fields = String(a["data-pb-filter-fields"] || "").split(",").filter(Boolean);
+        const sorts = String(a["data-pb-sort-options"] || "").split(",").filter(Boolean);
+        const sig = JSON.stringify([list?.key, fields, sorts]);
+        if (comp._pbMock === sig) {
+            return;
+        }
+        comp._pbMock = sig;
+        const fixed = { selectable: false, hoverable: false, layerable: false, draggable: false, droppable: false, copyable: false, highlightable: false };
+        const box = (label, control) => ({ ...fixed, tagName: "label", attributes: { class: "pb-filter-field" }, components: [{ ...fixed, tagName: "span", attributes: { class: "pb-filter-label label" }, components: [{ ...fixed, type: "textnode", content: label }] }, control] });
+        const select = (text) => ({ ...fixed, tagName: "span", attributes: { class: "select gpp-mock-select" }, components: [{ ...fixed, type: "textnode", content: text }] });
+        const input = (text) => ({ ...fixed, tagName: "span", attributes: { class: "input gpp-mock-input" }, components: [{ ...fixed, type: "textnode", content: text }] });
+        const nice = (n) => (n.charAt(0).toUpperCase() + n.slice(1)).replace(/[_-]+/g, " ");
+        const controls = fields.map((name) => {
+            const f = list?.col?.fields.find((x) => x.name == name);
+            if (f && ["number", "date", "autodate"].includes(f.type)) {
+                const [lo, hi] = f.type == "number" ? ["Min", "Max"] : ["From", "To"];
+                return box(nice(name), { ...fixed, tagName: "span", attributes: { class: "pb-filter-range" }, components: [input(lo), input(hi)] });
+            }
+            return box(nice(name), select("Any"));
+        });
+        if (sorts.length) {
+            controls.push(box("Sort by", select("Default")));
+        }
+        const parts = [];
+        if (!list) {
+            parts.push({ ...fixed, tagName: "p", attributes: { class: "gpp-mock-hint" }, components: [{ ...fixed, type: "textnode", content: "Filters: choose their list in the settings." }] });
+        } else if (!controls.length) {
+            parts.push({ ...fixed, tagName: "p", attributes: { class: "gpp-mock-hint" }, components: [{ ...fixed, type: "textnode", content: "Filters: tick the fields in the settings." }] });
+        } else {
+            parts.push({ ...fixed, tagName: "div", attributes: { class: "pb-filter-fields" }, components: controls });
+            parts.push({ ...fixed, tagName: "div", attributes: { class: "pb-filter-actions" }, components: [{ ...fixed, tagName: "span", attributes: { class: "btn" }, components: [{ ...fixed, type: "textnode", content: "Apply" }] }] });
+        }
+        comp.components(parts);
+    }
+
     const listChoices = (none) => {
         const lists = pageLists();
         return [{ id: "", label: lists.length ? none : "- Add a collection list first -" }, ...lists.map((l) => ({ id: l.key, label: l.col && l.col.name != l.key ? `${l.key} (${l.col.name})` : l.key }))];
@@ -317,11 +359,46 @@ export function pageBuilder(route) {
         return picked.map((b) => b.path);
     }
 
+    // ---- filters (internal/pages/filters.go): own fields of these types
+    const filterKinds = { select: "choice", bool: "yes / no", relation: "related record", number: "min / max", date: "from / to", autodate: "from / to", text: "a value", email: "a value", url: "a value" };
+
+    function filterableFields(col) {
+        return (col?.fields || []).filter((f) => !f.hidden && f.name != "id" && filterKinds[f.type] && !(col.type == "auth" && ["email", "password", "tokenKey"].includes(f.name)));
+    }
+
+    function defaultFilterFields(col) {
+        const all = filterableFields(col);
+        const picked = all.filter((f) => ["select", "bool", "relation"].includes(f.type)).slice(0, 4);
+        if (!picked.length) {
+            picked.push(...all.filter((f) => f.type == "number").slice(0, 1));
+        }
+        return picked.map((f) => f.name);
+    }
+
+    /** The sort choices of a list: [{ value: "-price", label: "Price (highest first)" }]. */
+    function sortChoices(col) {
+        const nice = (n) => (n.charAt(0).toUpperCase() + n.slice(1)).replace(/[_-]+/g, " ");
+        const out = [];
+        for (const f of filterableFields(col)) {
+            if (f.type == "number") {
+                out.push({ value: "-" + f.name, label: `${nice(f.name)} (highest first)` }, { value: f.name, label: `${nice(f.name)} (lowest first)` });
+            } else if (f.type == "date" || f.type == "autodate") {
+                out.push({ value: "-" + f.name, label: `${nice(f.name)} (newest first)` }, { value: f.name, label: `${nice(f.name)} (oldest first)` });
+            } else if (["text", "select", "email"].includes(f.type)) {
+                out.push({ value: f.name, label: `${nice(f.name)} (A–Z)` });
+            }
+        }
+        return out;
+    }
+
     /** Links new search boxes and pagers to a list of the page (the first one). */
     function linkSearch(root) {
         const lists = pageLists();
-        for (const comp of [root, ...root.find("[data-pb-search], [data-pb-pager]")]) {
+        for (const comp of [root, ...root.find("[data-pb-search], [data-pb-pager], [data-pb-filters]")]) {
             const a = comp.getAttributes();
+            if (a["data-pb-filters"] === "" && lists.length) {
+                comp.addAttributes({ "data-pb-filters": lists[0].key, "data-pb-filter-fields": defaultFilterFields(lists[0].col).join(",") });
+            }
             if (a["data-pb-search"] === "" && lists.length) {
                 comp.addAttributes({ "data-pb-search": lists[0].key, "data-pb-search-fields": defaultSearchFields(lists[0].col).join(",") });
             }
@@ -335,43 +412,73 @@ export function pageBuilder(route) {
         }
     }
 
-    function defineSearchTraits(ed) {
-        ed.Traits.addType("gpp-search-fields", {
+    // a trait of checkboxes storing the picked values in an attribute (comma separated)
+    function checklistTrait(ed, { type, attr, listAttr, options, encode = (v) => v, decode = (v) => v, choose, none }) {
+        ed.Traits.addType(type, {
             createInput({ component }) {
                 const el = document.createElement("div");
                 el.className = "gpp-search-fields";
                 el.addEventListener("change", () => {
-                    const picked = [...el.querySelectorAll("input:checked")].map((i) => i.value);
-                    component.addAttributes({ "data-pb-search-fields": picked.join(",") });
+                    const picked = [...el.querySelectorAll("input:checked")].map((i) => encode(i.value, i));
+                    component.addAttributes({ [attr]: picked.join(",") });
                 });
-                render(el, component);
+                draw(el, component);
                 return el;
             },
             onUpdate({ elInput, component }) {
-                render(elInput, component);
+                draw(elInput, component);
             },
         });
-        function render(el, comp) {
+        function draw(el, comp) {
             const a = comp.getAttributes();
-            const list = pageLists().find((l) => l.key == a["data-pb-search"]);
-            const picked = new Set(String(a["data-pb-search-fields"] || "").split(",").filter(Boolean));
+            const list = pageLists().find((l) => l.key == a[listAttr]);
+            const picked = new Set(String(a[attr] || "").split(",").filter(Boolean).map(decode));
             if (!list?.col) {
-                el.replaceChildren(Object.assign(document.createElement("span"), { className: "gpp-hint", textContent: "Choose the list it searches." }));
+                el.replaceChildren(Object.assign(document.createElement("span"), { className: "gpp-hint", textContent: choose }));
                 return;
             }
-            const rows = searchableFields(list.col).map((b) => {
+            const rows = options(list.col).map((o) => {
                 const label = document.createElement("label");
-                const box = Object.assign(document.createElement("input"), { type: "checkbox", value: b.path, checked: picked.has(b.path) });
-                const name = Object.assign(document.createElement("span"), { textContent: b.path.replace(".", " → ") });
-                label.title = b.label;
-                label.append(box, name, Object.assign(document.createElement("small"), { textContent: b.field.type }));
+                const box = Object.assign(document.createElement("input"), { type: "checkbox", value: o.value, checked: picked.has(o.value) });
+                box.dataset.label = o.label;
+                label.title = o.title || o.label;
+                label.append(box, Object.assign(document.createElement("span"), { textContent: o.label }), Object.assign(document.createElement("small"), { textContent: o.small || "" }));
                 return label;
             });
-            if (!picked.size) {
-                rows.unshift(Object.assign(document.createElement("span"), { className: "gpp-hint gpp-warn", textContent: "Tick the fields to search." }));
+            if (!picked.size && none) {
+                rows.unshift(Object.assign(document.createElement("span"), { className: "gpp-hint gpp-warn", textContent: none }));
             }
             el.replaceChildren(...rows);
         }
+    }
+
+    function defineSearchTraits(ed) {
+        checklistTrait(ed, {
+            type: "gpp-search-fields",
+            attr: "data-pb-search-fields",
+            listAttr: "data-pb-search",
+            options: (col) => searchableFields(col).map((b) => ({ value: b.path, label: b.path.replace(".", " → "), small: b.field.type, title: b.label })),
+            choose: "Choose the list it searches.",
+            none: "Tick the fields to search.",
+        });
+        checklistTrait(ed, {
+            type: "gpp-filter-fields",
+            attr: "data-pb-filter-fields",
+            listAttr: "data-pb-filters",
+            options: (col) => filterableFields(col).map((f) => ({ value: f.name, label: f.name, small: filterKinds[f.type] })),
+            choose: "Choose the list it filters.",
+            none: "Tick the fields to filter by.",
+        });
+        // "sort:Label" pairs (the label is generated)
+        checklistTrait(ed, {
+            type: "gpp-sort-options",
+            attr: "data-pb-sort-options",
+            listAttr: "data-pb-filters",
+            options: (col) => sortChoices(col),
+            encode: (v, box) => `${v}:${box.dataset.label}`,
+            decode: (v) => v.split(":")[0],
+            choose: "Choose the list it filters.",
+        });
     }
 
         const collectionOptions = () => [{ id: "", label: "- Select a collection -" }, ...collections.map((c) => ({ id: c.name, label: c.name }))];
@@ -399,6 +506,18 @@ export function pageBuilder(route) {
             applySamples(comp);
         },
     };
+    // the "Which records" editor of the lists and charts (records.js)
+    const recordsCtx = {
+        collectionOf: (comp) => {
+            const a = comp.getAttributes();
+            return byName(a["data-pb-list"] || a["data-pb-collection"] || "");
+        },
+        byName: (name) => byName(name),
+        // {{record.x}}: the record of the card around the list, or of a single item page
+        record: (comp) => contextCollection(comp) || null,
+        auth: () => byName("users") || null,
+        onChange: (comp) => formulaCtx.onChange(comp),
+    };
     const formOptions = () => [{ id: "", label: forms.length ? "- Select a form -" : "- No forms yet (Forms tab) -" }, ...forms.map((f) => ({ id: f.slug, label: f.name }))];
 
     function recordPageOptions(comp) {
@@ -412,7 +531,7 @@ export function pageBuilder(route) {
             }
         }
         const any = pages.length + related.length;
-        return [{ id: "", label: any ? "- Select a record page -" : "- No record page for this collection -" }, ...pages.map((p) => ({ id: p.slug, label: p.title })), ...related];
+        return [{ id: "", label: any ? "- Select a single item page -" : "- No single item page for this collection -" }, ...pages.map((p) => ({ id: p.slug, label: p.title })), ...related];
     }
 
     function defineTypes(ed) {
@@ -430,8 +549,8 @@ export function pageBuilder(route) {
                     droppable: "[data-pb-item], [data-pb-empty]",
                     traits: [
                         { type: "select", name: "data-pb-list", label: "Collection", options: collectionOptions() },
-                        { type: "text", name: "data-pb-filter", label: "Filter", placeholder: "e.g. published = true" },
-                        { type: "text", name: "data-pb-sort", label: "Sort", placeholder: "e.g. -created" },
+                        { type: "gpp-records-filter", name: "data-pb-filter", label: "Filter" },
+                        { type: "gpp-records-sort", name: "data-pb-sort", label: "Order" },
                         { type: "number", name: "data-pb-limit", label: "Max records", min: 1, max: 100, placeholder: "12" },
                         {
                             type: "select",
@@ -493,7 +612,7 @@ export function pageBuilder(route) {
                 defaults: {
                     name: "Record link",
                     traits: [
-                        { type: "select", name: "data-pb-link", label: "Record page", options: [] },
+                        { type: "select", name: "data-pb-link", label: "Single item page", options: [] },
                         { type: "select", name: "data-pb-href", label: "Or link field", options: [] },
                         "title",
                         { type: "select", name: "target", label: "Open in", options: [{ id: "", label: "Same tab" }, { id: "_blank", label: "New tab" }] },
@@ -510,6 +629,21 @@ export function pageBuilder(route) {
                     traits: [
                         { type: "select", name: "data-pb-search", label: "Searches", options: [] },
                         { type: "gpp-search-fields", name: "data-pb-search-fields", label: "Search in" },
+                    ],
+                },
+            },
+        });
+        dc.addType("pb-filters", {
+            isComponent: (el) => el?.tagName == "FORM" && has(el, "data-pb-filters"),
+            model: {
+                defaults: {
+                    name: "Filters",
+                    icon: '<i class="ri-filter-3-line"></i>',
+                    droppable: false,
+                    traits: [
+                        { type: "select", name: "data-pb-filters", label: "Filters", options: [] },
+                        { type: "gpp-filter-fields", name: "data-pb-filter-fields", label: "Fields" },
+                        { type: "gpp-sort-options", name: "data-pb-sort-options", label: "Sort choices" },
                     ],
                 },
             },
@@ -586,6 +720,12 @@ export function pageBuilder(route) {
             media: icon("ri-search-line"),
             content: `<form data-pb-search="" data-pb-search-fields="" style="display:flex;gap:8px;max-width:560px;margin:16px auto;padding:0 24px"><input type="search" class="input" placeholder="Search…" aria-label="Search" style="flex:1 1 auto;min-width:0;padding:8px 12px;border:1px solid #d4d4d8;border-radius:6px;font:inherit"><button type="submit" class="btn" style="padding:8px 16px;border-radius:6px;font:inherit;font-weight:600;cursor:pointer">Search</button></form>`,
         });
+        bm.add("pb-filters", {
+            ...dataCat,
+            label: "Filters",
+            media: icon("ri-filter-3-line"),
+            content: `<form data-pb-filters="" data-pb-filter-fields="" data-pb-sort-options="" style="max-width:960px;margin:16px auto;padding:0 24px"></form>`,
+        });
         bm.add("pb-pager", {
             ...dataCat,
             label: "Pagination",
@@ -619,7 +759,7 @@ export function pageBuilder(route) {
             if (tag == "img") {
                 add("data-pb-field", "Image field", 0);
             } else if (tag == "a") {
-                add("data-pb-link", "Record page", 0);
+                add("data-pb-link", "Single item page", 0);
                 add("data-pb-href", "Or link field", 1);
             } else if (comp.is("text") || comp.is("pb-field")) {
                 add("data-pb-field", "Show field", 0);
@@ -644,6 +784,11 @@ export function pageBuilder(route) {
         }
         comp.getTrait("data-pb-search")?.set("options", listChoices("- Choose a list -"));
         comp.getTrait("data-pb-pager")?.set("options", listChoices("- Choose a list -"));
+        comp.getTrait("data-pb-filters")?.set("options", listChoices("- Choose a list -"));
+        if (comp.is("pb-filters")) {
+            comp._pbFilters ??= comp.getAttributes()["data-pb-filters"];
+            filtersMock(comp);
+        }
         const limitTrait = comp.is("pb-list") && comp.getTrait("data-pb-limit");
         if (limitTrait) {
             const paged = !!comp.getAttributes()["data-pb-paginate"];
@@ -807,6 +952,16 @@ export function pageBuilder(route) {
             const list = pageLists().find((l) => l.key == a["data-pb-search"]);
             comp.addAttributes({ "data-pb-search-fields": list?.col ? defaultSearchFields(list.col).join(",") : "" });
         }
+        // filters set to another list: its usual fields
+        if (comp.is("pb-filters")) {
+            if (comp._pbFilters !== undefined && comp._pbFilters !== a["data-pb-filters"]) {
+                comp._pbFilters = a["data-pb-filters"];
+                const list = pageLists().find((l) => l.key == a["data-pb-filters"]);
+                comp.addAttributes({ "data-pb-filter-fields": list?.col ? defaultFilterFields(list.col).join(",") : "", "data-pb-sort-options": "" });
+                return;
+            }
+            filtersMock(comp);
+        }
         if (comp.is("pb-list") && comp._pbPaginate !== (a["data-pb-paginate"] || "")) {
             comp._pbPaginate = a["data-pb-paginate"] || "";
             refreshTraits(comp);
@@ -844,6 +999,7 @@ export function pageBuilder(route) {
                     defineWidgetTypes(ed, widgetCtx);
                     defineFormula(ed, formulaCtx);
                     defineConditions(ed, formulaCtx);
+                    defineRecordsTraits(ed, recordsCtx);
                     defineSearchTraits(ed);
                     defineColumnsTrait(ed, {
                         byName,
@@ -954,9 +1110,22 @@ export function pageBuilder(route) {
             // the first changes are the loading itself (the samples come later)
             refreshCanvas().finally(() =>
                 setTimeout(() => {
+                    // a new page: its search boxes and filters link to its list, the fields
+                    // of the cards and the links to the single item page are filled
+                    if (data.fresh) {
+                        linkSearch(ed.getWrapper());
+                        autofill(ed.getWrapper());
+                        applySamples(ed.getWrapper());
+                    }
+                    // the filters saved in the page: their preview (with the collections loaded)
+                    ed.getWrapper().find("form[data-pb-filters]").filter((c) => c.is("pb-filters")).forEach(filtersMock);
                     data.dirty = false;
                     ed.clearDirtyCount(); // a late "update" of the loading isn't a change
                     ed.on("update", () => (data.dirty ||= ed.getDirtyCount() > 0));
+                    if (data.fresh) {
+                        data.dirty = true; // the filled page isn't saved yet
+                        data.fresh = false;
+                    }
                     offerDraft(id, data.page.updated, (project) => restoreProject({ project }));
                 })
             );
@@ -1103,6 +1272,7 @@ export function pageBuilder(route) {
                 record_filter: p.record_filter,
                 record_rules: !!p.record_rules && !!p.record_collection,
                 kit: p.kit ? "basecoat" : "",
+                list_collection: p.kind == "collection" ? p.list_collection : "",
                 access: p.isPart ? "public" : p.access,
                 roles: p.access == "roles" && !p.isPart ? p.roles : [],
                 html: editor.getHtml(),
@@ -1176,7 +1346,7 @@ export function pageBuilder(route) {
 
     function settingsModal() {
         const p = data.page;
-        const draft = store({ title: p.title, slug: p.slug, description: p.description, published: p.published, home: p.home, record_filter: p.record_filter, record_rules: !!p.record_rules, kit: p.kit, access: p.access, roles: [...(p.roles || [])] });
+        const draft = store({ title: p.title, slug: p.slug, description: p.description, published: p.published, home: p.home, record_filter: p.record_filter, record_rules: !!p.record_rules, kit: p.kit, list_collection: p.list_collection || "", access: p.access, roles: [...(p.roles || [])] });
         const col = recordCollection();
 
         function apply() {
@@ -1210,7 +1380,8 @@ export function pageBuilder(route) {
             t.header({ className: "modal-header" }, t.h5({ className: "m-auto" }, "Page settings")),
             t.form(
                 { id: "gpPageSettings", className: "modal-content", onsubmit: (e) => (e.preventDefault(), apply()) },
-                field({ label: "Title", hint: "The browser tab title (record pages add the record name)." }, textInput(draft, "title", { required: true })),
+                t.div({ className: "gpp-page-type m-b-sm" }, t.span({ className: "txt-hint" }, "Type: "), t.strong(null, typeLabel(p, collections))),
+                field({ label: "Title", hint: "The browser tab title (single item pages add the record name)." }, textInput(draft, "title", { required: true })),
                 field(
                     { label: "Slug", hint: () => "Address: " + pageURL(slugify(draft.slug), col ? "{record id}" : "") },
                     textInput(draft, "slug", { required: true, className: "txt-code" }),
@@ -1220,8 +1391,20 @@ export function pageBuilder(route) {
                     ? t.div(
                         null,
                         field(
-                            { label: `Records of ${col.name} shown`, hint: "Optional filter: other records get a 404 (e.g. published = true)." },
-                            textInput(draft, "record_filter", { className: "txt-code", placeholder: "e.g. published = true" }),
+                            { label: `Records of ${col.name} shown`, hint: "Other records get a 404." },
+                            t.div(
+                                { className: "gpp-records-inline" },
+                                t.span({ className: "gpp-cond-sentence" }, () => (draft.record_filter ? filterSentence(draft.record_filter, col, byName) : "All the records")),
+                                t.button(
+                                    {
+                                        type: "button",
+                                        className: "btn sm secondary",
+                                        onclick: () => recordsModal({ title: "Records shown", collection: col, byName, filter: draft.record_filter || "", auth: byName("users") || null, onSave: ({ filter }) => (draft.record_filter = filter) }),
+                                    },
+                                    t.i({ className: "ri-filter-3-line", ariaHidden: true }),
+                                    t.span({ className: "txt" }, "Edit"),
+                                ),
+                            ),
                         ),
                         t.div(
                             { className: "m-b-sm" },
@@ -1232,11 +1415,29 @@ export function pageBuilder(route) {
                     : p.isPart
                         ? null
                         : t.div({ className: "m-b-sm" }, switchInput(draft, "home", "Home page (also served at /)")),
-                t.div(
-                    { className: "m-b-sm" },
-                    switchInput(draft, "kit", "Basecoat UI kit (components, sections and the site theme)"),
-                    t.div({ className: "field-help" }, "Its base styles reset headings, margins and images: turning it on can change the look of a page built without it."),
-                ),
+                p.kind == "collection"
+                    ? field(
+                        { label: "Collection listed", hint: "Shown in the list of the pages. The lists of the page keep their own settings." },
+                        select({
+                            required: true,
+                            options: collections.filter((c) => !c.name.startsWith("_")).map((c) => ({ value: c.id, label: c.name })),
+                            value: () => draft.list_collection,
+                            onchange: (v) => (draft.list_collection = v),
+                        }),
+                    )
+                    : null,
+                // pages made before the site theme applied to all: a one-way switch
+                () => (draft.kit
+                    ? t.div({ rid: "themed" })
+                    : t.div(
+                        { rid: "classic", className: "alert info m-b-sm" },
+                        t.div(
+                            { className: "content" },
+                            t.p(null, "This page doesn't use the site theme (it was made before every page did)."),
+                            t.p({ className: "txt-hint" }, "The theme's base styles reset headings, margins and images: check the page after the change (History keeps the current version)."),
+                        ),
+                        t.button({ type: "button", className: "btn sm", onclick: () => (draft.kit = true) }, t.i({ className: "ri-palette-line", ariaHidden: true }), t.span({ className: "txt" }, "Use the site theme")),
+                    )),
                 p.isPart
                     ? null
                     : field(

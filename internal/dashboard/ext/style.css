@@ -3057,3 +3057,44 @@ html:has(.gp-form-embed) {
 .gp-kv-secret {
     flex: none;
 }
+
+/* webhook trigger: the readable address, the curl example */
+.gp-prefixed {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.gp-prefixed > span {
+    flex: none;
+    padding-left: 2px;
+}
+.gp-prefixed input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.gp-curl {
+    margin-top: 8px;
+}
+.gp-curl summary {
+    cursor: pointer;
+    font-size: var(--smFontSize);
+    color: var(--txtHintColor);
+}
+.gp-curl pre {
+    margin: 6px 0 0;
+    padding: 8px 10px;
+    overflow-x: auto;
+    border-radius: var(--borderRadius);
+    background: var(--baseAlt1Color);
+    font-size: var(--smFontSize);
+    white-space: pre;
+}
+@media (max-width: 700px) {
+    .gp-url-row {
+        flex-wrap: wrap;
+    }
+    .gp-url-row .gp-url {
+        flex-basis: 100%;
+        overflow-wrap: anywhere;
+    }
+}

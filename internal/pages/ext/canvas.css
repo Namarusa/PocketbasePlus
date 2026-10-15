@@ -165,7 +165,60 @@ dialog.dialog::before {
     content: "Show more   (more records of this list)";
 }
 [data-pb-search],
+[data-pb-filters],
 [data-pb-pager] {
     outline: 1px dashed rgba(59, 130, 246, 0.6);
     outline-offset: 2px;
+}
+
+/* filters: a preview of the controls (filled by the server for the visitors) */
+[data-pb-filters] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+[data-pb-filters] .pb-filter-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+}
+[data-pb-filters] .pb-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+[data-pb-filters] .pb-filter-range {
+    display: flex;
+    gap: 6px;
+}
+[data-pb-filters] .gpp-mock-select,
+[data-pb-filters] .gpp-mock-input {
+    display: block;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid #d4d4d8;
+    border-radius: 6px;
+    font-weight: 400;
+    opacity: 0.8;
+}
+[data-pb-filters] .gpp-mock-select::after {
+    content: " ▾";
+    float: right;
+}
+[data-pb-filters] .pb-filter-actions .btn {
+    display: inline-block;
+    padding: 6px 14px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    font-weight: 600;
+}
+[data-pb-filters] .gpp-mock-hint {
+    margin: 0;
+    padding: 12px;
+    color: #3b82f6;
+    font: 13px sans-serif;
 }

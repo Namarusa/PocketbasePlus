@@ -498,8 +498,20 @@ export function setKitBlocks(ed, enabled) {
 
 // --- page templates -----------------------------------------------------------------------------
 
-const catalog = `<section style="padding:56px 0 8px"><div style="${container}"><h1 style="margin:0 0 8px;font-size:40px;font-weight:700;letter-spacing:-0.02em">Our catalog</h1>
-<p style="margin:0;${muted};font-size:17px">Pick a collection in the settings of the list below.</p></div></section>`;
+// a collection page: its title, a search box, the filters and the list (the
+// builder links them to the list and fills the fields when the page opens)
+const collectionTop = (title) => `<section style="padding:56px 0 8px"><div style="${container}"><h1 style="margin:0 0 8px;font-size:40px;font-weight:700;letter-spacing:-0.02em">${title}</h1>
+<p style="margin:0;${muted};font-size:17px">Search, filter and browse.</p></div></section>
+<section style="padding:16px 0 0"><div style="${container};display:flex;flex-direction:column;gap:8px">
+<form data-pb-search="" data-pb-search-fields="" style="display:flex;gap:8px;max-width:560px"><input type="search" class="input" placeholder="Search…" aria-label="Search" style="flex:1 1 auto;min-width:0"><button type="submit" class="btn">Search</button></form>
+<form data-pb-filters="" data-pb-filter-fields="" data-pb-sort-options=""></form></div></section>`;
+
+/** A data block listing a collection, paged. */
+const listOf = (block, collection, perPage) =>
+    dataBlocks[block]
+        .replace("gap:20px;padding:24px", "gap:20px;padding:24px 0") // aligned with the title
+        .replace('data-pb-list="" data-pb-limit="12"', `data-pb-list="${collection}" data-pb-limit="${perPage}" data-pb-paginate="pages"`)
+        .replace('data-pb-list="" data-pb-limit="20"', `data-pb-list="${collection}" data-pb-limit="${perPage}" data-pb-paginate="pages"`);
 
 const recordDetail = `<section style="padding:56px 0"><div style="max-width:880px;margin:0 auto;padding:0 24px;display:flex;flex-direction:column;gap:20px">
 <nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="/">Home</a></li><li aria-hidden="true">/</li><li><span aria-current="page" data-pb-field="">{field}</span></li></ol></nav>
@@ -519,30 +531,40 @@ const footer = (o) => (o.footer ? part(o.footer) : sections.footer);
 /** The placeholder of a site part. */
 const part = (slug) => `<div data-pb-part="${slug}"></div>`;
 
+/** The types of pages: what they show and their address. */
+export const pageTypes = [
+    { id: "single", label: "Single page", icon: "ri-pages-line", hint: "A standalone page: home, about, contact, landing…", address: "/slug" },
+    { id: "collection", label: "Collection page", icon: "ri-gallery-view-2", hint: "Lists the records of a collection, with search, filters and pages", address: "/slug" },
+    { id: "item", label: "Single item page", icon: "ri-file-list-2-line", hint: "Shows one record per address; collection pages link to it", address: "/slug/{id}" },
+    { id: "part", label: "Site part", icon: "ri-layout-top-2-line", hint: "A header, footer or sidebar placed on several pages", address: "placed on pages" },
+];
+
 /**
- * New page templates ("html" is null for the classic blank page). html(o):
- * o.header, o.footer, o.sidebar are the slugs of the site parts to use instead
- * of new copies of these sections (when the site has them).
+ * The layouts of the new pages, by type. html(o, x): o.header, o.footer,
+ * o.sidebar are the slugs of the site parts to use instead of new copies of
+ * these sections (when the site has them); x.title, x.collection (collection
+ * pages: its name). Every page uses the site theme (Pages → Theme).
  */
 export const templates = [
-    { id: "blank", label: "Blank (Basecoat UI)", kind: "page", kit: true, html: () => `<section style="padding:64px 24px;text-align:center"><h1 style="margin:0 0 12px;font-size:40px;font-weight:700">Untitled</h1><p style="margin:0;${muted}">Drag blocks from the right panel.</p></section>` },
-    { id: "landing", label: "Landing page", kind: "page", kit: true, parts: ["header", "footer"], html: (o = {}) => header(o) + sections.hero + sections.features + sections.testimonials + sections.faq + sections.cta + footer(o) },
-    { id: "catalog", label: "Catalog (record cards)", kind: "page", kit: true, parts: ["header", "footer"], html: (o = {}) => header(o) + catalog + `<section><div style="${container}">${dataBlocks["record-cards"]}</div></section>` + footer(o) },
+    { id: "blank", type: "single", label: "Blank", icon: "ri-file-line", html: () => `<section style="padding:64px 24px;text-align:center"><h1 style="margin:0 0 12px;font-size:40px;font-weight:700">Untitled</h1><p style="margin:0;${muted}">Drag blocks from the right panel.</p></section>` },
+    { id: "landing", type: "single", label: "Landing", icon: "ri-rocket-line", hint: "Hero, features, testimonials, FAQ, call to action", parts: ["header", "footer"], html: (o = {}) => header(o) + sections.hero + sections.features + sections.testimonials + sections.faq + sections.cta + footer(o) },
     {
         id: "sidebar",
+        type: "single",
         label: "App with sidebar",
-        kind: "page",
-        kit: true,
+        icon: "ri-layout-left-line",
         parts: ["sidebar"],
         html: (o = {}) => (o.sidebar ? part(o.sidebar) + fixedIds(sidebarMain("Dashboard", sidebarContent, ' data-sidebar-toggle=""')) : fixedIds(sidebarLayout("Dashboard", sidebarContent))),
     },
-    { id: "detail", label: "Record detail", kind: "record", kit: true, parts: ["header", "footer"], html: (o = {}) => header(o) + recordDetail + footer(o) },
+    { id: "cards", type: "collection", label: "Cards", icon: "ri-gallery-view-2", parts: ["header", "footer"], html: (o = {}, x = {}) => header(o) + collectionTop(x.title) + `<section><div style="${container}">${listOf("record-cards", x.collection, 12)}</div></section>` + footer(o) },
+    { id: "table", type: "collection", label: "Table", icon: "ri-table-2", parts: ["header", "footer"], html: (o = {}, x = {}) => header(o) + collectionTop(x.title) + `<section style="padding:24px 0"><div style="${container}">${listOf("record-table", x.collection, 20)}</div></section>` + footer(o) },
+    { id: "list", type: "collection", label: "List", icon: "ri-list-view", parts: ["header", "footer"], html: (o = {}, x = {}) => header(o) + collectionTop(x.title) + `<section style="padding:24px 0"><div style="${container}">${listOf("record-items", x.collection, 12)}</div></section>` + footer(o) },
+    { id: "detail", type: "item", label: "Detail", icon: "ri-file-list-2-line", parts: ["header", "footer"], html: (o = {}) => header(o) + recordDetail + footer(o) },
     // site parts
-    { id: "part-header", label: "Header (navbar)", kind: "part", kit: true, html: () => sections.navbar },
-    { id: "part-footer", label: "Footer", kind: "part", kit: true, html: () => sections.footer },
-    { id: "part-sidebar", label: "Sidebar (menu beside the content)", kind: "part", kit: true, html: () => fixedIds(sidebarAside) },
-    { id: "part-blank", label: "Blank (Basecoat UI)", kind: "part", kit: true, html: () => `<section style="padding:24px"><p style="margin:0">Drag blocks here.</p></section>` },
-    { id: "classic", label: "Blank without kit (classic)", kind: "any", kit: false, html: null },
+    { id: "part-header", type: "part", label: "Header", icon: "ri-layout-top-line", hint: "A navigation bar", html: () => sections.navbar },
+    { id: "part-footer", type: "part", label: "Footer", icon: "ri-layout-bottom-line", html: () => sections.footer },
+    { id: "part-sidebar", type: "part", label: "Sidebar", icon: "ri-layout-left-line", hint: "A menu beside the content", html: () => fixedIds(sidebarAside) },
+    { id: "part-blank", type: "part", label: "Blank", icon: "ri-file-line", html: () => `<section style="padding:24px"><p style="margin:0">Drag blocks here.</p></section>` },
 ];
 
 // --- canvas -----------------------------------------------------------------------------------

@@ -155,7 +155,7 @@ func duplicatePage(e *core.RequestEvent) error {
 		return e.NotFoundError("", nil)
 	}
 	dst := core.NewRecord(src.Collection())
-	for _, k := range []string{"description", "record_collection", "record_filter", "record_rules", "access", "roles", "kit", "kind", "html", "css", "project"} {
+	for _, k := range []string{"description", "record_collection", "list_collection", "record_filter", "record_rules", "access", "roles", "kit", "kind", "html", "css", "project"} {
 		dst.Set(k, src.Get(k))
 	}
 	title := src.GetString("title") + " (copy)"

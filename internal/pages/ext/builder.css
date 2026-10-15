@@ -794,3 +794,128 @@ html[data-color-scheme="dark"] .gpp-viewas-banner {
     color: #f59e0b;
     opacity: 1;
 }
+
+/* New page: the types and the layouts */
+.gpp-new-page {
+    max-width: 720px;
+}
+.gpp-choice-cards.gpp-types {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: 12px;
+}
+.gpp-choice-cards.gpp-layouts {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+.gpp-choice-cards .gp-ai-card-title i {
+    font-size: 1.15em;
+    opacity: 0.8;
+}
+.gpp-page-type {
+    font-size: var(--smFontSize);
+}
+@media (max-width: 600px) {
+    .gpp-choice-cards.gpp-types,
+    .gpp-choice-cards.gpp-layouts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* "Which records": the filter rules and the order of a list */
+.gpp-records-modal {
+    width: min(920px, calc(100vw - 32px));
+    max-width: none;
+}
+.gpp-rec-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.gpp-rec-head .gp-label {
+    margin: 0;
+}
+.gpp-rec-match {
+    min-width: 220px;
+}
+.gpp-rec-rules,
+.gpp-rec-sorts > div {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.gpp-rec-sorts {
+    margin-top: 18px;
+}
+.gpp-rec-row {
+    display: grid;
+    grid-template-columns: 48px minmax(130px, 1fr) minmax(120px, 0.8fr) minmax(260px, 2fr) auto;
+    gap: 6px;
+    align-items: center;
+}
+.gpp-rec-row.sort {
+    grid-template-columns: 52px minmax(140px, 1fr) minmax(140px, 1fr) auto;
+}
+.gpp-rec-join {
+    font-size: var(--smFontSize);
+    color: var(--txtHintColor);
+    text-align: right;
+}
+.gpp-rec-value {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+}
+.gpp-rec-source {
+    flex: 0 0 44%;
+    min-width: 0;
+}
+.gpp-rec-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.gpp-rec-input > input {
+    width: 100%;
+    min-height: 38px;
+    padding: 6px 10px;
+    border-radius: var(--borderRadius);
+    border: 0;
+    background: var(--baseAlt1Color);
+    color: var(--txtPrimaryColor);
+    font: inherit;
+}
+.gpp-rec-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.gpp-rec-count {
+    margin-top: 16px;
+    padding: 10px 12px;
+    border-radius: var(--borderRadius);
+    background: var(--baseAlt1Color);
+    font-size: var(--smFontSize);
+}
+.gpp-records-modal textarea {
+    width: 100%;
+}
+.gpp-records-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: space-between;
+    padding: 6px 4px;
+}
+@media (max-width: 700px) {
+    .gpp-rec-row,
+    .gpp-rec-row.sort {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .gpp-rec-join {
+        grid-column: 1 / -1;
+        text-align: left;
+    }
+    .gpp-rec-value {
+        grid-column: 1 / -1;
+    }
+}

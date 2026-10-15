@@ -3,12 +3,9 @@ package flows
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"slices"
@@ -106,6 +103,11 @@ func Register(app core.App, mailEngine *mail.Engine) *Engine {
 		// public: protected by the flow secret token
 		g.Route(http.MethodPost, "/webhook/{id}", e.webhook)
 		g.Route(http.MethodGet, "/webhook/{id}", e.webhook)
+		// the same with a readable address (webhook.go); one route per method,
+		// next to the pages' GET /{path...}
+		for _, m := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+			se.Router.Route(m, "/hooks/{slug}", e.webhookBySlug)
+		}
 		// public: the buttons and forms of the pages (access set in the trigger)
 		g.POST("/action/{id}", e.action)
 
@@ -341,70 +343,6 @@ func (e *Engine) manualRun(re *core.RequestEvent) error {
 	return re.JSON(http.StatusOK, map[string]any{"runs": results})
 }
 
-// webhook runs a webhook flow. The token can be passed as ?token= or the
-// X-Flow-Token header. With "wait" enabled, the response is the last step output.
-func (e *Engine) webhook(re *core.RequestEvent) error {
-	flow, err := re.App.FindRecordById(flowsCollection, re.Request.PathValue("id"))
-	if err != nil || flow.GetString("trigger_type") != TriggerWebhook || !flow.GetBool("active") {
-		return re.NotFoundError("", nil)
-	}
-	cfg := triggerConfig(flow)
-
-	token := re.Request.Header.Get("X-Flow-Token")
-	if q := re.Request.URL.Query(); q.Has("token") {
-		if token == "" {
-			token = q.Get("token")
-		}
-		// the request logger records the URL once the handler returns: keep the secret out of it
-		q.Del("token")
-		re.Request.URL.RawQuery = q.Encode()
-	}
-	expected := asString(cfg, "token")
-	if expected == "" || subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
-		return re.UnauthorizedError("Invalid flow token.", nil)
-	}
-	if m := strings.ToUpper(asString(cfg, "method")); m != "" && m != "ANY" && m != re.Request.Method {
-		return re.Error(http.StatusMethodNotAllowed, "Method not allowed.", nil)
-	}
-
-	raw, err := io.ReadAll(io.LimitReader(re.Request.Body, 5<<20))
-	if err != nil {
-		return re.BadRequestError("Failed to read the body.", err)
-	}
-	var body any = string(raw)
-	if len(raw) > 0 && json.Valid(raw) {
-		_ = json.Unmarshal(raw, &body)
-	}
-	query := map[string]any{}
-	for k, v := range re.Request.URL.Query() {
-		if k != "token" {
-			query[k] = strings.Join(v, ",")
-		}
-	}
-	headers := map[string]any{}
-	for k := range re.Request.Header {
-		if !strings.EqualFold(k, "X-Flow-Token") && !strings.EqualFold(k, "Authorization") && !strings.EqualFold(k, "Cookie") {
-			headers[k] = re.Request.Header.Get(k)
-		}
-	}
-	trigger := map[string]any{"method": re.Request.Method, "query": query, "headers": headers, "body": body}
-
-	if !asBool(cfg, "wait") {
-		e.RunAsync(flow, trigger, nil)
-		return re.JSON(http.StatusAccepted, map[string]any{"accepted": true})
-	}
-
-	res := e.Run(flow, trigger, RunOptions{Timeout: 30 * time.Second})
-	switch res.Status {
-	case StatusSuccess:
-		return re.JSON(http.StatusOK, res.Output)
-	case StatusRejected:
-		return re.BadRequestError(res.Error, nil)
-	default:
-		return re.InternalServerError("The flow failed.", errors.New(res.Error))
-	}
-}
-
 func templateVariables(re *core.RequestEvent) error {
 	tpl, err := re.App.FindRecordById("email_templates", re.Request.PathValue("id"))
 	if err != nil {
@@ -457,6 +395,9 @@ func validateFlow(app core.App, f *core.Record) error {
 		if asString(cfg, "token") == "" {
 			cfg["token"] = randomToken()
 		}
+		if err := validateWebhook(app, f, cfg); err != nil {
+			errs["trigger"] = err
+		}
 	case TriggerAction:
 		switch asString(cfg, "access") {
 		case "users":
@@ -497,6 +438,8 @@ func validateFlow(app core.App, f *core.Record) error {
 	} else if err := validateAPICallSteps(app, steps); err != nil {
 		errs["steps"] = validation.NewError("invalid_steps", err.Error())
 	} else if err := validateSecrets(app, steps); err != nil {
+		errs["steps"] = validation.NewError("invalid_steps", err.Error())
+	} else if err := validateRespondSteps(steps, f.GetString("trigger_type") == TriggerWebhook); err != nil {
 		errs["steps"] = validation.NewError("invalid_steps", err.Error())
 	}
 	if steps == nil {

@@ -78,7 +78,7 @@ func TemplateVariables(parts ...string) ([]string, error) {
 	for _, src := range parts {
 		trees, err := parse.Parse("t", src, "", "", builtinFuncNames())
 		if err != nil {
-			return nil, err
+			return nil, secretError(err)
 		}
 		for _, tree := range trees {
 			walk(tree.Root)

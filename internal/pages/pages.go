@@ -154,6 +154,7 @@ func validate(app core.App, rec *core.Record) error {
 			errs["record_collection"] = validation.NewError("validation_part_record", "A site part can't be a record page.")
 		}
 	}
+	validateType(app, rec, errs)
 	validateAccess(app, rec, errs)
 	if err := checkBindings(app, rec.GetString("html")); err != nil {
 		errs["html"] = validation.NewError("validation_invalid_bindings", err.Error())
@@ -269,7 +270,7 @@ func serveHome(e *core.RequestEvent) error {
 
 // reservedSlugs are the first path segments of the app's own routes: no page
 // takes them (a module serving a new root path adds it here).
-var reservedSlugs = map[string]bool{"api": true, "p": true, "f": true, "dashboards": true, "email": true}
+var reservedSlugs = map[string]bool{"api": true, "p": true, "f": true, "dashboards": true, "email": true, "hooks": true}
 
 // rootPages is false when another route serves the root paths (pb_public):
 // the pages are then served at /p/{slug}.
@@ -609,7 +610,7 @@ func command(app *pocketbase.PocketBase) *cobra.Command {
 					}
 				}
 				// forget the migrations (re-adding the module creates the collections again)
-				_, err := tx.DB().Delete("_migrations", dbx.In("file", migrationFile, kitMigrationFile, modeMigrationFile, versionsMigrationFile, accessMigrationFile, rulesMigrationFile, chartsMigrationFile)).Execute()
+				_, err := tx.DB().Delete("_migrations", dbx.In("file", migrationFile, kitMigrationFile, modeMigrationFile, versionsMigrationFile, accessMigrationFile, rulesMigrationFile, chartsMigrationFile, typesMigrationFile)).Execute()
 				return err
 			})
 			if err != nil {

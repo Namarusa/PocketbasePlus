@@ -32,6 +32,7 @@ const stepTypes = {
     sign_in: { label: "Sign in", icon: "ri-login-box-line", group: "Pages", key: "login", hint: "Check an email and password and sign the visitor in" },
     sign_out: { label: "Sign out", icon: "ri-logout-box-r-line", group: "Pages", key: "logout", hint: "Sign the visitor out" },
     redirect: { label: "Redirect to page", icon: "ri-share-forward-line", group: "Pages", key: "redirect", hint: "Open a page next, with a message" },
+    respond: { label: "Respond", icon: "ri-reply-line", group: "Webhook", key: "response", hint: "The response of the webhook: status, JSON, text, HTML or a redirect" },
     set_variables: { label: "Set variables", icon: "ri-braces-line", group: "Advanced", key: "vars", hint: "Compute values to reuse in later steps" },
     script: { label: "Run script", icon: "ri-javascript-line", group: "Advanced", key: "script", hint: "Sandboxed JavaScript returning a value" },
 };
@@ -73,6 +74,8 @@ function defaultConfig(type) {
             return { collection: "users", identity: "{{.trigger.form.email}}", password: "{{.trigger.form.password}}" };
         case "redirect":
             return { url: "", message: "" };
+        case "respond":
+            return { format: "json", status: "200", headers: {}, body: '{"ok": true}', redirect: "" };
         case "script":
             return { code: "// data.trigger, data.steps, data.last, data.item...\nreturn { ok: true };" };
         case "ai_decision":
@@ -196,6 +199,7 @@ export function pageFlowEditor(route) {
             steps: [],
         },
         savedId: isNew ? "" : id,
+        savedSlug: "", // the webhook address once saved
         initSerialized: "",
         collections: [],
         allCollections: [],
@@ -279,6 +283,7 @@ export function pageFlowEditor(route) {
                     trigger: f.trigger || {},
                     steps: f.steps || [],
                 });
+                data.savedSlug = f.trigger?.slug || "";
                 app.store.title = f.name;
                 walkSteps(data.flow.steps, (s) => {
                     if (s.type == "send_email" && s.config?.template) {
@@ -342,6 +347,7 @@ export function pageFlowEditor(route) {
                 : await app.pb.collection("flows").create(body);
             // keep server-side normalization (step ids, webhook token...)
             Object.assign(data.flow, { trigger: saved.trigger || {}, steps: saved.steps || [] });
+            data.savedSlug = saved.trigger?.slug || "";
             data.initSerialized = data.serialized;
             app.store.title = saved.name;
             loadFlows();
@@ -400,7 +406,12 @@ export function pageFlowEditor(route) {
                 items.push({ path: "trigger.payload", label: "payload" });
                 break;
             case "webhook":
-                items.push({ path: "trigger.body", label: "request body (JSON)" });
+                if (cfg.access && cfg.access != "token") {
+                    items.push({ path: "trigger.user.id", label: "signed-in caller id (empty for guests)" });
+                    items.push({ path: "trigger.user.email", label: "signed-in caller email" });
+                    items.push({ path: "trigger.user.roles", label: "signed-in caller roles" });
+                }
+                items.push({ path: "trigger.body", label: "request body (JSON or form fields)" });
                 items.push({ path: "trigger.query", label: "query parameters" });
                 items.push({ path: "trigger.headers", label: "headers" });
                 items.push({ path: "trigger.method", label: "HTTP method" });
@@ -416,7 +427,7 @@ export function pageFlowEditor(route) {
                 items.push({ path: "trigger.user.id", label: "signed-in user id (empty for guests)" });
                 items.push({ path: "trigger.user.email", label: "signed-in user email" });
                 items.push({ path: "trigger.user.roles", label: "signed-in user roles" });
-                items.push({ path: "trigger.record", label: "record of the button (lists, record pages)" });
+                items.push({ path: "trigger.record", label: "record of the button (lists, single item pages)" });
                 items.push({ path: "trigger.collection", label: "collection of that record" });
                 items.push({ path: "trigger.page", label: "page of the button" });
                 items.push({ path: "trigger.next", label: "page to go back to (?next)" });
@@ -1520,7 +1531,9 @@ export function pageFlowEditor(route) {
                 }
             } catch {}
             const what = /^authorization$/i.test(k) ? "TOKEN" : k;
-            return { name: secretName(site ? `${site}_${what}` : what), value: plain, description: step?.name ? `Used by the step "${step.name}"` : "" };
+            // a local address: named after the step (CALL_THE_SHOP_TOKEN)
+            const prefix = site || step?.name || "";
+            return { name: secretName(prefix ? `${prefix}_${what}` : what), value: plain, description: step?.name ? `Used by the step "${step.name}"` : "" };
         };
         return t.div(
             { className: "gp-kv-secret" },
@@ -2671,6 +2684,54 @@ export function pageFlowEditor(route) {
                     ),
                     field({ label: "Message shown on that page (optional)" }, exprInput(c, "message", sid, { placeholder: "Thanks, your order is saved." })),
                 ];
+            case "respond": {
+                const mode = () => (c.redirect != null && c.redirect !== "" ? "redirect" : c.format || "json");
+                const setMode = (m) => {
+                    if (m == "redirect") {
+                        c.redirect = c.redirect || "/";
+                    } else {
+                        c.redirect = "";
+                        c.format = m;
+                    }
+                };
+                return [
+                    () =>
+                        data.flow.trigger?.wait
+                            ? t.div({ rid: "waiting" })
+                            : t.div({ rid: "nowait", className: "alert warning m-b-sm" }, `Turn on "Wait for the flow and respond" in the trigger: the caller gets this response.`),
+                    t.div(
+                        { className: "gp-segmented m-b-sm" },
+                        [["json", "ri-braces-line", "JSON"], ["text", "ri-text", "Text"], ["html", "ri-html5-line", "HTML"], ["redirect", "ri-share-forward-line", "Redirect"]].map(([value, icon, label]) =>
+                            t.label(
+                                { className: () => `gp-segment ${mode() == value ? "active" : ""}` },
+                                t.input({ type: "radio", name: "respond_" + sid, checked: () => mode() == value, onchange: () => setMode(value) }),
+                                t.i({ className: icon, ariaHidden: true }),
+                                t.span({ className: "txt" }, label),
+                            )
+                        ),
+                    ),
+                    () =>
+                        mode() == "redirect"
+                            ? t.div(
+                                { rid: "redirect" },
+                                field({ label: "Address", hint: "A path of the site (/thanks) or an http(s) address. Sent with status 303 (or a 30x status below)." }, exprInput(c, "redirect", sid, { mono: true, placeholder: "/thanks?order={{.steps.created.id}}" })),
+                            )
+                            : t.div(
+                                { rid: "body_" + mode() },
+                                t.div({ className: "grid sm" },
+                                    t.div({ className: "col-lg-3" }, field({ label: "Status" }, exprInput(c, "status", sid, { mono: true, placeholder: "200" }))),
+                                    t.div({ className: "col-lg-9" }, field({ label: "Body", hint: {
+                                        json: "JSON text, or one value: {{steps.records.items}}. Use {{json .some.value}} inside JSON text.",
+                                        text: "Plain text.",
+                                        html: "An HTML page. The values are escaped, and the page can't run scripts.",
+                                    }[mode()] }, exprInput(c, "body", sid, { multiline: true, rows: 5, mono: true, placeholder: { json: '{"ok": true, "id": "{{.steps.created.id}}"}', text: "Thanks!", html: "<h1>Thanks {{.trigger.body.name}}</h1>" }[mode()] }))),
+                                ),
+                            ),
+                    t.label({ className: "gp-label" }, "Headers"),
+                    kvEditor(c, "headers", sid, { keyPlaceholder: "Header-Name", addLabel: "Add header" }),
+                    t.div({ className: "field-help" }, "The last Respond step that runs wins. Cookies and security headers can't be set."),
+                ];
+            }
             case "ai_decision":
                 return aiStepConfig(s);
             case "ai_generate":
@@ -2756,7 +2817,8 @@ export function pageFlowEditor(route) {
                                         className: "gp-add-item",
                                         hidden: (type == "set_trigger" && !(data.flow.trigger_type == "record" && data.flow.trigger?.timing == "before")) ||
                                             (type == "api_call" && !globalThis.gpAPIs) ||
-                                            (stepTypes[type].group == "Pages" && data.flow.trigger_type != "action"),
+                                            (stepTypes[type].group == "Pages" && data.flow.trigger_type != "action") ||
+                                            (stepTypes[type].group == "Webhook" && data.flow.trigger_type != "webhook"),
                                         onclick: () => addStep(parent, prop, index, type),
                                     },
                                     t.i({ className: def.icon, ariaHidden: true }),
@@ -2909,14 +2971,32 @@ export function pageFlowEditor(route) {
     // --- trigger card ------------------------------------------------------------------------
 
     function webhookURL() {
-        const token = data.flow.trigger?.token;
-        if (!data.savedId || !token) {
+        const cfg = data.flow.trigger || {};
+        const byToken = !cfg.access || cfg.access == "token";
+        if (!data.savedId || (byToken && !cfg.token)) {
             return "";
         }
+        // the saved address (a new one works once saved)
+        const slug = data.savedSlug;
         // buildURL may return a relative ("../api") or absolute URL: normalize it
-        const url = new URL(app.pb.buildURL("/api/flows/webhook/" + data.savedId), window.location.href);
-        url.searchParams.set("token", token);
+        const url = new URL(app.pb.buildURL(slug ? "/hooks/" + slug : "/api/flows/webhook/" + data.savedId), window.location.href);
+        if (byToken) {
+            url.searchParams.set("token", cfg.token);
+        }
         return url.href;
+    }
+
+    function curlExample(url) {
+        const cfg = data.flow.trigger || {};
+        const method = !cfg.method || cfg.method == "ANY" ? "POST" : cfg.method;
+        const lines = [`curl -X ${method} '${url}'`];
+        if (cfg.access == "users" || cfg.access == "roles") {
+            lines.push(`  -H 'Authorization: <the token of a signed-in user>'`);
+        }
+        if (method != "GET") {
+            lines.push(`  -H 'Content-Type: application/json' -d '{"example": true}'`);
+        }
+        return lines.join(" \\\n");
     }
 
     function triggerCard() {
@@ -3033,31 +3113,86 @@ export function pageFlowEditor(route) {
                             return t.div(
                                 { rid: "webhook" },
                                 t.div({ className: "grid sm" },
-                                    t.div({ className: "col-lg-4" }, field({ label: "Method" }, plainSelect(cfg, "method", [{ value: "POST", label: "POST" }, { value: "GET", label: "GET" }, { value: "ANY", label: "Any" }]))),
-                                    t.div({ className: "col-lg-8 gp-switch-col" }, switchField(cfg, "wait", "Wait for the flow and respond with the last step output", "wh_wait")),
+                                    t.div({ className: "col-lg-4" }, field({ label: "Method" }, plainSelect(cfg, "method", ["POST", "GET", "PUT", "PATCH", "DELETE"].map((m) => ({ value: m, label: m })).concat([{ value: "ANY", label: "Any" }])))),
+                                    t.div({ className: "col-lg-8 gp-switch-col" }, switchField(cfg, "wait", "Wait for the flow and respond (a Respond step, else the last step output as JSON)", "wh_wait")),
+                                ),
+                                t.label({ className: "gp-label" }, "Who can call it"),
+                                t.div(
+                                    { className: "gp-segmented m-b-sm" },
+                                    [
+                                        ["token", "ri-key-2-line", "Secret token", "in the address or a header"],
+                                        ["public", "ri-global-line", "Public", "anyone"],
+                                        ["users", "ri-user-line", "Signed-in users", ""],
+                                        ["roles", "ri-shield-user-line", "Roles", ""],
+                                    ].map(([value, icon, label, hint]) =>
+                                        t.label(
+                                            { className: () => `gp-segment ${(cfg.access || "token") == value ? "active" : ""}` },
+                                            t.input({ type: "radio", name: "wh_access", checked: () => (cfg.access || "token") == value, onchange: () => (cfg.access = value) }),
+                                            t.i({ className: icon, ariaHidden: true }),
+                                            t.span({ className: "txt" }, label, hint ? t.small({ className: "txt-hint" }, " - " + hint) : null),
+                                        )
+                                    ),
+                                ),
+                                () =>
+                                    cfg.access == "roles"
+                                        ? t.div({ rid: "roles" }, field({ label: "Roles", name: "trigger" }, multiSelect({
+                                            placeholder: "Select roles",
+                                            options: () => roleList.list.map((r) => ({ value: r.id, label: r.name })),
+                                            value: () => cfg.roles || [],
+                                            onchange: (v) => (cfg.roles = v),
+                                        })))
+                                        : null,
+                                () =>
+                                    cfg.access && cfg.access != "token"
+                                        ? t.div(
+                                            { rid: "callerhelp", className: "field-help m-b-sm" },
+                                            "The signed-in caller is trigger.user: a PocketBase auth token in the Authorization header, or the session of the visitor for calls from the pages. The record steps check the caller's API rules, and a visitor can call it 60 times a minute.",
+                                        )
+                                        : t.div({ rid: "callerhelp" }),
+                                field(
+                                    { label: "Address (optional)", hint: "A readable address: /hooks/new-order instead of /api/flows/webhook/<id>. Lowercase letters, digits and dashes." },
+                                    t.div(
+                                        { className: "gp-prefixed" },
+                                        t.span({ className: "txt-hint txt-code" }, "/hooks/"),
+                                        t.input({
+                                            type: "text",
+                                            className: "txt-code",
+                                            placeholder: "new-order",
+                                            value: () => cfg.slug || "",
+                                            oninput: (e) => (cfg.slug = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-")),
+                                        }),
+                                    ),
                                 ),
                                 () => {
                                     const url = webhookURL();
                                     if (!url) {
                                         return t.div({ rid: "nourl", className: "alert info" }, "Save the flow to get its webhook URL.");
                                     }
+                                    const byToken = !cfg.access || cfg.access == "token";
                                     return t.div(
-                                        { rid: "url", className: "gp-panel" },
-                                        t.div({ className: "gp-label" }, "Webhook URL (keep it secret: the token authorizes the call)"),
+                                        { rid: "url" + url, className: "gp-panel" },
+                                        t.div({ className: "gp-label" }, byToken ? "Webhook URL (keep it secret: the token authorizes the call)" : "Webhook URL"),
                                         t.div(
-                                            { className: "flex gap-5" },
+                                            { className: "flex gap-5 gp-url-row" },
                                             t.code({ className: "gp-url flex-fill" }, url),
                                             t.button({ type: "button", className: "btn sm secondary", onclick: () => { app.utils.copyToClipboard(url); app.toasts.success("Copied."); } }, "Copy"),
-                                            t.button(
-                                                {
-                                                    type: "button",
-                                                    className: "btn sm transparent danger",
-                                                    onclick: () => app.modals.confirm("Generate a new token? The current URL stops working once you save.", () => (cfg.token = "")),
-                                                },
-                                                "New token",
-                                            ),
+                                            byToken
+                                                ? t.button(
+                                                    {
+                                                        type: "button",
+                                                        className: "btn sm transparent danger",
+                                                        onclick: () => app.modals.confirm("Generate a new token? The current URL stops working once you save.", () => (cfg.token = "")),
+                                                    },
+                                                    "New token",
+                                                )
+                                                : null,
                                         ),
-                                        t.div({ className: "field-help" }, "The body (JSON or text), query and headers are available as trigger.body, trigger.query and trigger.headers. The token can also be sent in an X-Flow-Token header."),
+                                        t.details(
+                                            { className: "gp-curl" },
+                                            t.summary(null, "Example with curl"),
+                                            t.pre({ className: "txt-code" }, curlExample(url)),
+                                        ),
+                                        t.div({ className: "field-help" }, "The body (JSON, form fields or text), query and headers are available as trigger.body, trigger.query and trigger.headers." + (byToken ? " The token can also be sent in an X-Flow-Token header." : "")),
                                     );
                                 },
                             );

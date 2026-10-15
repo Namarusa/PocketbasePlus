@@ -11,3 +11,8 @@ pb_data/
 .env
 .env.*
 .DS_Store
+
+# browser tests (e2e/): dependencies and screenshots
+/e2e/node_modules/
+/e2e/out/
+/e2e/package-lock.json

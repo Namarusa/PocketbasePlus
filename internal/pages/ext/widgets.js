@@ -87,7 +87,7 @@ export function defineWidgetTypes(ed, ctx) {
                     },
                     { type: "select", name: "data-pb-split", label: "Series by", options: [] },
                     { type: "checkbox", name: "data-pb-stacked", label: "Stacked", valueTrue: "true", valueFalse: "" },
-                    { type: "text", name: "data-pb-filter", label: "Filter", placeholder: "e.g. status = 'paid'" },
+                    { type: "gpp-chart-filter", name: "data-pb-filter", label: "Filter" },
                     { type: "number", name: "data-pb-limit", label: "Max items", min: 1, max: 100, placeholder: "10" },
                     {
                         type: "select",

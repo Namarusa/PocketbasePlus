@@ -167,6 +167,9 @@ func TestAssistantPages(t *testing.T) {
 	if err != nil || product.GetBool("published") || product.GetString("record_collection") != f.products.Id {
 		t.Fatalf("new page: %v %v", err, product)
 	}
+	if product.GetString("kit") != kitBasecoat {
+		t.Errorf("new pages use the site theme, got kit %q", product.GetString("kit"))
+	}
 	// the published page shows the formula
 	out := f.render(t, html, scope{}, nil)
 	if !strings.Contains(out, "€12.50") {

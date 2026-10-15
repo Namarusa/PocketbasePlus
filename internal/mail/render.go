@@ -55,7 +55,7 @@ func Render(subject, html, text string, data map[string]any, parseOnly ...bool) 
 
 	t, err := htmltemplate.New("html").Funcs(funcs).Option("missingkey=zero").Parse(html)
 	if err != nil {
-		return out, err
+		return out, secretError(err)
 	}
 	if !only {
 		var buf bytes.Buffer
@@ -71,13 +71,22 @@ func Render(subject, html, text string, data map[string]any, parseOnly ...bool) 
 func execText(name, src string, data map[string]any, parseOnly bool) (string, error) {
 	t, err := texttemplate.New(name).Funcs(funcs).Option("missingkey=zero").Parse(src)
 	if err != nil || parseOnly {
-		return "", err
+		return "", secretError(err)
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, data); err != nil {
 		return "", err
 	}
 	return strings.ReplaceAll(buf.String(), "<no value>", ""), nil
+}
+
+// secretError explains a secret ({{secret.NAME}}) used in an email: the
+// values of the secrets can't be sent.
+func secretError(err error) error {
+	if err != nil && strings.Contains(err.Error(), `function "secret" not defined`) {
+		return formula.ErrSecretHere
+	}
+	return err
 }
 
 // RecordData exports the non hidden fields of a record (plus its email for

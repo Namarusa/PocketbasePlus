@@ -129,6 +129,10 @@ type run struct {
 
 	// page actions: what the steps decide for the response
 	action *actionState
+	// the visitor who started the run (their API rules and limits apply)
+	caller *callerState
+	// webhooks waiting for the result: the response the steps set
+	respond *respondState
 
 	// test runs of the editor: the data kept for the variable picker
 	sample *sampleState
@@ -197,7 +201,9 @@ type RunOptions struct {
 	Timeout       time.Duration
 	Sample        bool // keep the test data of the editor (flow_runs.sample)
 
-	action *actionState // page actions
+	action  *actionState  // page actions
+	caller  *callerState  // a visitor started the run (page actions, webhooks without token)
+	respond *respondState // webhooks waiting for the result: the Respond step
 }
 
 // Run executes a flow synchronously and stores the run log.
@@ -236,6 +242,8 @@ func (e *Engine) Run(flow *core.Record, trigger map[string]any, opts RunOptions)
 		triggerRecord: opts.TriggerRecord,
 		before:        opts.Before,
 		action:        opts.action,
+		caller:        opts.caller,
+		respond:       opts.respond,
 		data: map[string]any{
 			"trigger": toPlain(trigger),
 			"steps":   map[string]any{},
