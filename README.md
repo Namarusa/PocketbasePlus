@@ -111,30 +111,14 @@ the sources).
   NAS app managers.
 - **HTTPS**: put the container behind your reverse proxy (Caddy, Traefik, Nginx Proxy Manager, the NAS one) and set
   Settings → Application → *User IP proxy headers* (see [Security](#security)).
-- **Coolify**: + New → *Docker Compose (Empty)*, with:
-
-  ```yaml
-  services:
-    pocketbaseplus:
-      image: ghcr.io/namarusa/pocketbaseplus:0.4
-      environment:
-        - SERVICE_FQDN_POCKETBASEPLUS_8090
-        - TZ=${TZ:-UTC}
-        - POCKETBASEPLUS_ADMIN_EMAIL=${ADMIN_EMAIL}
-        - POCKETBASEPLUS_ADMIN_PASSWORD=${ADMIN_PASSWORD}
-        - POCKETBASEPLUS_ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      volumes:
-        - pocketbaseplus-data:/pb_data
-      restart: unless-stopped
-  volumes:
-    pocketbaseplus-data:
-  ```
-
-  Each `${…}` shows in the Environment Variables tab (remove `ADMIN_EMAIL` and `ADMIN_PASSWORD` after the first
-  start, keep `ENCRYPTION_KEY` safe). No `ports:`: set the domain on the service with the container port
-  (`https://app.example.com:8090`); Coolify's proxy serves it over HTTPS. Leave Coolify's own health check off (the
-  image has no curl or wget; its built-in check shows *healthy*). Then set Settings → Application → *Application URL*
-  to the domain and *User IP proxy headers* to `X-Forwarded-For`. Redeploy pulls the latest `0.4.x`.
+- **Coolify**: + New → *Public Repository* → `https://github.com/Namarusa/PocketbasePlus`, Build Pack *Docker
+  Compose*, Base Directory `/`, Docker Compose Location `/deploy/coolify/docker-compose.yml` (or + New → *Docker
+  Compose (Empty)* and paste [that file](deploy/coolify/docker-compose.yml)). Every setting of the table below shows in the resource's
+  Environment Variables tab: set `ADMIN_EMAIL`, `ADMIN_PASSWORD` (remove them after the first start) and
+  `ENCRYPTION_KEY` (keep it safe), and Deploy. Coolify generates a domain; to use yours, change it in
+  Domains with the container port (`https://app.example.com:8090`, visitors use `https://app.example.com`). The
+  image's health check shows the app as *healthy*. Then set Settings → Application → *Application URL* to the domain and
+  *User IP proxy headers* to `X-Forwarded-For`. Redeploy pulls the latest `0.4.x`.
 - **Commands**: `docker exec pocketbaseplus pocketbaseplus --dir /pb_data superuser upsert EMAIL PASS` (or
   `pages uninstall`, `migrate`...).
 

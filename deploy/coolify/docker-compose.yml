@@ -1,0 +1,49 @@
+# PocketBasePlus on Coolify (https://coolify.io).
+#
+# Coolify → + New → Public Repository → https://github.com/Namarusa/PocketbasePlus
+#   Build Pack: Docker Compose · Base Directory: / ·
+#   Docker Compose Location: /deploy/coolify/docker-compose.yml
+# (or + New → Docker Compose (Empty) and paste this file).
+#
+# Every ${VARIABLE} below is listed in the Environment Variables tab of the
+# resource: set or change it there, then Redeploy. The value after ":-" is
+# the initial value, also used when it's left empty. More in the README, "Docker".
+services:
+  pocketbaseplus:
+    # the released image (0.4.x updates on Redeploy); "latest" follows every release
+    image: ghcr.io/namarusa/pocketbaseplus:${POCKETBASEPLUS_VERSION:-0.4}
+    environment:
+      # Coolify generates a domain routed to the container's port 8090; change it in
+      # Domains (https://app.example.com:8090: the suffix is the container port,
+      # visitors use https://app.example.com)
+      - SERVICE_URL_POCKETBASEPLUS_8090
+      # time zone of the server, e.g. Europe/Paris
+      - TZ=${TZ:-UTC}
+      # first superuser, created only when there is none yet: remove both after the first start
+      - POCKETBASEPLUS_ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - POCKETBASEPLUS_ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # 32 characters (openssl rand -hex 16) encrypting the stored settings and secrets.
+      # Keep a copy: without it the app can't open its data anymore. Never change it afterwards.
+      - POCKETBASEPLUS_ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      # 1: flows and API calls may reach private addresses (other containers, your network)
+      - POCKETBASEPLUS_FLOWS_ALLOW_PRIVATE_HTTP=${FLOWS_ALLOW_PRIVATE_HTTP:-0}
+      # 1: published pages load nothing from the internet
+      - POCKETBASEPLUS_OFFLINE=${OFFLINE:-0}
+      # a tile server for the maps (empty: OpenStreetMap)
+      - POCKETBASEPLUS_MAP_TILES=${MAP_TILES:-}
+      # days the record history is kept
+      - POCKETBASEPLUS_REVISIONS_RETENTION_DAYS=${REVISIONS_RETENTION_DAYS:-180}
+      # fixed key of the email unsubscribe links (empty: derived from the app's secret)
+      - POCKETBASEPLUS_UNSUBSCRIBE_SECRET=${UNSUBSCRIBE_SECRET:-}
+      # the user the app runs as, owner of the data
+      - PUID=${PUID:-65532}
+      - PGID=${PGID:-65532}
+    volumes:
+      # the database, uploads and backups: keep this volume
+      - pocketbaseplus-data:/pb_data
+    restart: unless-stopped
+    # no "ports:": Coolify's proxy serves the domain over HTTPS. The health check is
+    # the image's own (pocketbaseplus health), which Coolify uses for compose apps.
+
+volumes:
+  pocketbaseplus-data:
