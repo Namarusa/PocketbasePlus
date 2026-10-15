@@ -80,6 +80,11 @@ try {
         } catch (err) {
             failed++;
             console.log(`✗ ${file}: ${err.message}` + (errors.length ? `\n  page errors: ${errors.join(" | ")}` : ""));
+            if (process.env.GITHUB_ACTIONS) {
+                // an annotation: readable on the run page (and its API) without the logs
+                const msg = `${err.message}${errors.length ? " | page errors: " + errors.join(" | ") : ""}`.replace(/%/g, "%25").replace(/\r?\n/g, "%0A");
+                console.log(`::error title=e2e ${file}::${msg.slice(0, 4000)}`);
+            }
             await page.screenshot({ path: join(out, `${file.replace(".mjs", "")}-failure.png`) }).catch(() => {});
         }
         await context.close();
