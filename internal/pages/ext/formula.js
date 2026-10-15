@@ -379,6 +379,15 @@ export function formulaModal(ed, comp, ctx, key = "data-pb-formula", onSaved = n
         }
         groups.push({ name: "Signed-in visitor (empty for guests)", icon: "ri-user-line", items: ctx.userFields().map((f) => ({ path: "auth." + f.path, label: f.label })) });
         groups.push({ name: "Page address", icon: "ri-link", items: [{ path: "query.q", label: "a parameter of the address (?q=...): rename q" }] });
+        if (ctx.isErrorPage?.()) {
+            groups.unshift({ name: "The error", icon: "ri-error-warning-line", items: [
+                { path: "error.code", label: "code (404, 401, 403, 500)" },
+                { path: "error.title", label: "title (Page not found…)" },
+                { path: "error.message", label: "message" },
+                { path: "error.path", label: "the address asked" },
+                { path: "error.signin", label: "the sign in page, back to that address" },
+            ] });
+        }
         return groups;
     };
 

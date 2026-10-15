@@ -537,7 +537,29 @@ export const pageTypes = [
     { id: "collection", label: "Collection page", icon: "ri-gallery-view-2", hint: "Lists the records of a collection, with search, filters and pages", address: "/slug" },
     { id: "item", label: "Single item page", icon: "ri-file-list-2-line", hint: "Shows one record per address; collection pages link to it", address: "/slug/{id}" },
     { id: "part", label: "Site part", icon: "ri-layout-top-2-line", hint: "A header, footer or sidebar placed on several pages", address: "placed on pages" },
+    { id: "error", label: "Error page", icon: "ri-error-warning-line", hint: "Shown for a missing page (404), a sign in needed (401), a refused access (403) or a failure (500)", address: "one per error" },
 ];
+
+/** The errors a page can be made for: { code, title } (internal/pages/errors.go). */
+export const errorCodes = [
+    { code: "404", title: "Page not found" },
+    { code: "401", title: "Sign in required" },
+    { code: "403", title: "No access" },
+    { code: "500", title: "Something went wrong" },
+];
+
+// the error page: the code, the title, the message and what to do next
+// (formulas read the error: the same page as the default one of the server)
+const errorMessage = `<main style="min-height:60vh;display:flex;align-items:center;justify-content:center;padding:48px 24px;text-align:center">
+<div style="max-width:520px;display:flex;flex-direction:column;align-items:center;gap:12px">
+<p data-pb-formula="{{error.code}}" style="margin:0;font-size:64px;font-weight:700;letter-spacing:-0.03em;line-height:1;color:var(--muted-foreground)">404</p>
+<h1 data-pb-formula="{{error.title}}" style="margin:0;font-size:28px;font-weight:700">Page not found</h1>
+<p data-pb-formula="{{error.message}}" style="margin:0;color:var(--muted-foreground)">This page doesn't exist or isn't published.</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px">
+<a class="btn" href="#" data-pb-attr-href="{{error.signin}}" data-pb-conditions='[{"action":"show","when":[{"field":"error.code","op":"eq","value":"401"},{"field":"error.signin","op":"notEmpty"}]}]'>Sign in</a>
+<form data-pb-logout="." data-pb-visible="users" data-pb-conditions='[{"action":"show","when":[{"field":"error.code","op":"eq","value":"403"}]}]'><button type="submit" class="btn" data-variant="outline">Sign in with another account</button></form>
+<a class="btn" data-variant="outline" href="/">Home</a>
+</div></div></main>`;
 
 /**
  * The layouts of the new pages, by type. html(o, x): o.header, o.footer,
@@ -560,6 +582,8 @@ export const templates = [
     { id: "table", type: "collection", label: "Table", icon: "ri-table-2", parts: ["header", "footer"], html: (o = {}, x = {}) => header(o) + collectionTop(x.title) + `<section style="padding:24px 0"><div style="${container}">${listOf("record-table", x.collection, 20)}</div></section>` + footer(o) },
     { id: "list", type: "collection", label: "List", icon: "ri-list-view", parts: ["header", "footer"], html: (o = {}, x = {}) => header(o) + collectionTop(x.title) + `<section style="padding:24px 0"><div style="${container}">${listOf("record-items", x.collection, 12)}</div></section>` + footer(o) },
     { id: "detail", type: "item", label: "Detail", icon: "ri-file-list-2-line", parts: ["header", "footer"], html: (o = {}) => header(o) + recordDetail + footer(o) },
+    { id: "error-message", type: "error", label: "Message", icon: "ri-error-warning-line", hint: "The code, a title, a message and the next step", parts: ["header", "footer"], html: (o = {}) => header(o) + errorMessage + footer(o) },
+    { id: "error-plain", type: "error", label: "Message only", icon: "ri-file-line", hint: "Without header and footer", html: () => errorMessage },
     // site parts
     { id: "part-header", type: "part", label: "Header", icon: "ri-layout-top-line", hint: "A navigation bar", html: () => sections.navbar },
     { id: "part-footer", type: "part", label: "Footer", icon: "ri-layout-bottom-line", html: () => sections.footer },

@@ -3,6 +3,7 @@ package pages
 import (
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -30,7 +31,7 @@ const attrFormula = "data-pb-formula"
 
 const maxFormula = 4 << 10
 
-var formulaRoots = []string{"record", "auth", "query"}
+var formulaRoots = []string{"record", "auth", "query", "error"}
 
 // relation chains of a formula: record.brand.country.name: [brand country]
 var formulaPathRegex = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.$])\$?\.?(record|auth)((?:\.[A-Za-z0-9_]+)+)`)
@@ -203,10 +204,15 @@ func (r *renderer) formulaData(s scope, src string) map[string]any {
 			query[k] = q
 		}
 	}
+	errInfo := r.errorInfo
+	if errInfo == nil {
+		errInfo = map[string]any{}
+	}
 	return map[string]any{
 		"record": r.recordMap(s, chains["record"]),
 		"auth":   r.recordMap(self, chains["auth"]),
 		"query":  query,
+		"error":  errInfo,
 	}
 }
 
@@ -320,7 +326,8 @@ type previewBody struct {
 // previewRenderer reads the body of a builder preview (dst embeds pb) and
 // returns a renderer of the page with the sample record's scope.
 func previewRenderer(e *core.RequestEvent, dst any, pb *previewBody) (*renderer, scope, error) {
-	if _, err := e.App.FindRecordById(Collection, e.Request.PathValue("id")); err != nil {
+	page, err := e.App.FindRecordById(Collection, e.Request.PathValue("id"))
+	if err != nil {
 		return nil, scope{}, e.NotFoundError("", nil)
 	}
 	if err := e.BindBody(dst); err != nil || !validAs(pb.As) {
@@ -337,6 +344,10 @@ func previewRenderer(e *core.RequestEvent, dst any, pb *previewBody) (*renderer,
 	}
 	r := &renderer{app: e.App, ctx: e.Request.Context(), query: url.Values{}, preview: true, budget: maxRecords,
 		visitor: v, info: v.requestInfo(), path: "/"}
+	if page.GetString("kind") == kindError {
+		code, _ := strconv.Atoi(page.GetString("error_code"))
+		r.errorInfo = errorInfo(e.App, code, "/an/address")
+	}
 	return r, s, nil
 }
 

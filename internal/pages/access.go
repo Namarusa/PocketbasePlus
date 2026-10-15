@@ -274,14 +274,10 @@ func denied(e *core.RequestEvent, page *core.Record, v visitor) error {
 	if v.user == nil && login != "" && login != page.GetString("slug") {
 		return e.Redirect(http.StatusSeeOther, pageURL(login, "")+"?next="+url.QueryEscape(path))
 	}
-	title, text, status := "Sign in required", "Sign in to view this page.", http.StatusUnauthorized
-	action := ""
 	if v.user != nil {
-		title, text, status = "No access", "Your account doesn't have access to this page.", http.StatusForbidden
-		action = `<form method="post" action="/api/session/logout"><input type="hidden" name="_next" value="` + html.EscapeString(path) + `">` +
-			`<button type="submit" style="font:inherit;padding:8px 16px;cursor:pointer">Sign in with another account</button></form>`
+		return errorPage(e, http.StatusForbidden)
 	}
-	return deniedPage(e, status, title, text, action)
+	return errorPage(e, http.StatusUnauthorized)
 }
 
 func deniedPage(e *core.RequestEvent, status int, title, text, extra string) error {

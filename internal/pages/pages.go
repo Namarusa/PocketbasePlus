@@ -327,8 +327,8 @@ func servePage(e *core.RequestEvent) error {
 	q := e.Request.URL.Query()
 	version, as := q.Get("version"), q.Get("as")
 	preview := validAs(as) && validPreview(e.App, rec, q.Get("preview"), previewScope(version, as))
-	if !rec.GetBool("published") && !preview {
-		return notFound(e)
+	if !rec.GetBool("published") && !preview || rec.GetString("kind") == kindError && !preview {
+		return notFound(e) // an error page is shown instead of other pages, not at its own address
 	}
 	if version != "" {
 		if !preview {
@@ -416,9 +416,15 @@ func respond(e *core.RequestEvent, page, record *core.Record, preview bool, v vi
 			view.Title = name + " · " + view.Title
 		}
 	}
+	if page.GetString("kind") == kindError {
+		// the preview of an error page: its error, at a sample address
+		code, _ := strconv.Atoi(page.GetString("error_code"))
+		view.Error = errorInfo(e.App, code, "/an/address")
+	}
 	out, script, err := render(e.Request.Context(), e.App, view, e.Request.URL.Query(), preview)
 	if err != nil {
-		return e.InternalServerError("The page couldn't be rendered.", err)
+		e.App.Logger().Error("Page rendering failed", "page", page.GetString("slug"), "error", err)
+		return errorPage(e, http.StatusInternalServerError)
 	}
 	h := e.Response.Header()
 	h.Set("Content-Security-Policy", pageCSP(script, view.Kit != nil))
@@ -429,13 +435,7 @@ func respond(e *core.RequestEvent, page, record *core.Record, preview bool, v vi
 }
 
 func notFound(e *core.RequestEvent) error {
-	h := e.Response.Header()
-	h.Set("Content-Security-Policy", pageCSP(false, false))
-	h.Set("Cache-Control", "no-cache")
-	return e.HTML(http.StatusNotFound, `<!doctype html><html lang="en"><head><meta charset="utf-8">`+
-		`<meta name="viewport" content="width=device-width, initial-scale=1"><title>Page not found</title></head>`+
-		`<body style="font-family:system-ui,sans-serif;text-align:center;padding:15vh 16px;color:#555">`+
-		`<h1 style="font-weight:600">Page not found</h1><p>This page doesn't exist or isn't published.</p></body></html>`)
+	return errorPage(e, http.StatusNotFound)
 }
 
 // serveAsset serves a file uploaded in the editor (images of the page design).
@@ -610,7 +610,7 @@ func command(app *pocketbase.PocketBase) *cobra.Command {
 					}
 				}
 				// forget the migrations (re-adding the module creates the collections again)
-				_, err := tx.DB().Delete("_migrations", dbx.In("file", migrationFile, kitMigrationFile, modeMigrationFile, versionsMigrationFile, accessMigrationFile, rulesMigrationFile, chartsMigrationFile, typesMigrationFile)).Execute()
+				_, err := tx.DB().Delete("_migrations", dbx.In("file", migrationFile, kitMigrationFile, modeMigrationFile, versionsMigrationFile, accessMigrationFile, rulesMigrationFile, chartsMigrationFile, typesMigrationFile, errorsMigrationFile)).Execute()
 				return err
 			})
 			if err != nil {

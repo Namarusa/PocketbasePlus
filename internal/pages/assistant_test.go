@@ -195,4 +195,64 @@ func TestAssistantPages(t *testing.T) {
 	if !strings.Contains(b.Body.String(), "changed since this proposal") {
 		t.Errorf("stale proposal: %s", b.Body.String())
 	}
+
+	// a collection page with a search box, filters and pages, and an error page
+	model.steps = []func(ai.ChatRequest) ai.Message{
+		func(req ai.ChatRequest) ai.Message {
+			if system := req.Messages[0].Content; !strings.Contains(system, "data-pb-filters") || !strings.Contains(system, "error_code") {
+				t.Errorf("the guide covers filters and error pages")
+			}
+			return ai.Message{Role: "assistant", ToolCalls: []ai.ToolCall{
+				toolCall("c1", "propose_page", map[string]any{"title": "Catalog", "slug": "catalog", "kind": "collection", "list_collection": "products", "html": `<h1>Catalog</h1>
+<form data-pb-search="products" data-pb-search-fields="name"><input type="search"><button>Search</button></form>
+<form data-pb-filters="products" data-pb-filter-fields="name,price" data-pb-sort-options="-price:Most expensive"></form>
+<div data-pb-list="products" data-pb-limit="1" data-pb-paginate="pages" data-pb-access="rules"><article data-pb-item><h3 data-pb-field="name" data-pb-conditions='[{"action":"set","prop":"data-pb-style-color","value":"red","when":[{"field":"record.price","op":"gt","value":"5"}]}]'></h3></article></div>`}),
+				toolCall("e1", "propose_page", map[string]any{"title": "Lost", "kind": "error", "error_code": "404", "published": true, "access": "users",
+					"html": `<h1 data-pb-formula="{{error.code}} · {{error.title}}"></h1><p data-pb-formula="Nothing at {{error.path}}"></p>`}),
+			}}
+		},
+		func(req ai.ChatRequest) ai.Message {
+			return ai.Message{Role: "assistant", Content: "Apply them."}
+		},
+	}
+	res = post("/api/assistant/chat", map[string]any{"conversation": res.ID, "message": "a catalog and a 404 page"})
+	acts := res.Actions[len(res.Actions)-2:]
+	if p := fmt.Sprint(acts[0]["details"].(map[string]any)["preview"]); !strings.Contains(p, "pb-pager") || !strings.Contains(p, `name="f.price_min"`) || !strings.Contains(p, "color:red") {
+		t.Errorf("collection page preview: %s", p)
+	}
+	if p := fmt.Sprint(acts[1]["details"].(map[string]any)["preview"]); !strings.Contains(p, "404 · Page not found") || !strings.Contains(p, "/an/address") {
+		t.Errorf("error page preview: %s", p)
+	}
+	if !strings.Contains(fmt.Sprint(acts[1]), "Error page · 404") {
+		t.Errorf("error page card: %v", acts[1])
+	}
+	for _, act := range acts {
+		post("/api/assistant/conversations/"+res.ID+"/actions/"+act["id"].(string)+"/apply", nil)
+	}
+	lost, err := f.app.FindFirstRecordByData(Collection, "slug", "error-404")
+	if err != nil || lost.GetString("kind") != kindError || lost.GetString("access") != accessPublic || !lost.GetBool("published") {
+		t.Fatalf("error page: %v %v", err, lost)
+	}
+	if catalog, err := f.app.FindFirstRecordByData(Collection, "slug", "catalog"); err != nil || catalog.GetString("list_collection") != f.products.Id {
+		t.Fatalf("collection page: %v %v", err, catalog)
+	}
+	b = httptest.NewRecorder()
+	mux.ServeHTTP(b, httptest.NewRequest(http.MethodGet, "/no-such", nil))
+	if b.Code != 404 || !strings.Contains(b.Body.String(), "Nothing at /no-such") {
+		t.Errorf("the 404 page is used: %d %s", b.Code, b.Body.String())
+	}
+
+	// one page per error
+	model.steps = []func(ai.ChatRequest) ai.Message{
+		func(req ai.ChatRequest) ai.Message {
+			return ai.Message{Role: "assistant", ToolCalls: []ai.ToolCall{toolCall("e2", "propose_page", map[string]any{"title": "Lost again", "kind": "error", "error_code": "404", "html": "<p>x</p>"})}}
+		},
+		func(req ai.ChatRequest) ai.Message {
+			if r := result(req, "e2"); !strings.Contains(fmt.Sprint(r["error"]), "already") {
+				t.Errorf("a second 404 page: %v", r)
+			}
+			return ai.Message{Role: "assistant", Content: "There's one already."}
+		},
+	}
+	post("/api/assistant/chat", map[string]any{"conversation": res.ID, "message": "another 404 page"})
 }

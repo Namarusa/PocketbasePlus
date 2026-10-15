@@ -102,6 +102,11 @@ function fieldChoices(comp, ctx) {
     for (const f of ctx.typedUserFields()) {
         out.push({ value: "auth." + f.path, label: "Signed-in visitor › " + f.label, kind: f.path == "id" ? "text" : kindOf(f.field), field: f.field });
     }
+    if (ctx.isErrorPage?.()) {
+        for (const [name, label] of [["code", "code"], ["title", "title"], ["path", "address asked"], ["signin", "sign in page"]]) {
+            out.push({ value: "error." + name, label: "The error › " + label, kind: "text" });
+        }
+    }
     out.push({ value: "query", label: "Page address › a parameter (?name=…)", kind: "any" });
     out.push({ value: "formula", label: "Custom formula…", kind: "formula" });
     return out;

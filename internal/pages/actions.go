@@ -60,6 +60,9 @@ func (r *renderer) actionForm(n *xhtml.Node, s scope) *xhtml.Node {
 	}
 	setAttr(form, "action", "/api/session/logout")
 	next := session.LocalPath(logout)
+	if logout == "." {
+		next = session.LocalPath(r.path) // back to this page (error pages: sign in with another account)
+	}
 	if next == "" {
 		next = "/"
 	}

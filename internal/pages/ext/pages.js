@@ -2,7 +2,7 @@
 // /{slug} (and /{slug}/{id} for single item pages), the home page at /.
 
 import { field, handleError, page, select, sidebar, switchInput, userCollections } from "../pocketbaseplus/lib.js";
-import { pageTypes, templates } from "./kit.js";
+import { errorCodes, pageTypes, templates } from "./kit.js";
 
 export const shared = store({ pages: [], loaded: false });
 let loading = null;
@@ -11,7 +11,7 @@ export function loadPages() {
     if (!loading) {
         loading = app.pb
             .collection("pages")
-            .getFullList({ sort: "title", fields: "id,title,slug,published,home,record_collection,list_collection,kind,access,roles,updated", requestKey: null })
+            .getFullList({ sort: "title", fields: "id,title,slug,published,home,record_collection,list_collection,error_code,kind,access,roles,updated", requestKey: null })
             .then((list) => (shared.pages = list))
             .catch(handleError)
             .finally(() => {
@@ -34,7 +34,7 @@ export function pagesSidebar() {
                 { href: "#/pages", label: "All pages", icon: "ri-layout-grid-line", exact: true },
                 { href: "#/pages/theme", label: "Theme", icon: "ri-palette-line", exact: true },
                 { href: "#/pages/members", label: "Members & sign in", icon: "ri-shield-user-line", exact: true },
-                ...shared.pages.filter((p) => !isPart(p)).map((p) => ({
+                ...shared.pages.filter((p) => !isPart(p) && !isError(p)).map((p) => ({
                     href: "#/pages/" + p.id,
                     label: p.title,
                     icon: pageIcon(p),
@@ -47,6 +47,16 @@ export function pagesSidebar() {
             ],
         },
         {
+            name: "Error pages",
+            empty: "Not set: visitors see the default ones, with the site theme.",
+            links: shared.pages.filter(isError).sort((a, b) => a.error_code.localeCompare(b.error_code)).map((p) => ({
+                href: "#/pages/" + p.id,
+                label: `${p.error_code} · ${p.title}`,
+                icon: "ri-error-warning-line",
+                after: t.span({ className: `gp-dot ${p.published ? "on" : ""}`, title: p.published ? "In use" : "Draft: the default page is shown" }),
+            })),
+        },
+        {
             name: "Site parts",
             empty: "Header, footer, sidebar... placed on several pages.",
             links: shared.pages.filter(isPart).map((p) => ({ href: "#/pages/" + p.id, label: p.title, icon: "ri-layout-top-2-line" })),
@@ -55,6 +65,7 @@ export function pagesSidebar() {
 }
 
 export const isPart = (p) => p.kind == "part";
+export const isError = (p) => p.kind == "error";
 export const isProtected = (p) => p.access == "users" || p.access == "roles";
 
 /** The site parts a template can use instead of new copies: { header: slug, footer: slug, sidebar: slug }. */
@@ -97,10 +108,13 @@ export function pageType(p) {
     if (p.kind == "collection") {
         return "collection";
     }
+    if (p.kind == "error") {
+        return "error";
+    }
     return p.record_collection ? "item" : "single";
 }
 
-const typeIcons = { single: "ri-pages-line", collection: "ri-gallery-view-2", item: "ri-file-list-2-line", part: "ri-layout-top-2-line" };
+const typeIcons = { single: "ri-pages-line", collection: "ri-gallery-view-2", item: "ri-file-list-2-line", part: "ri-layout-top-2-line", error: "ri-error-warning-line" };
 export const pageIcon = (p) => (p.home ? "ri-home-4-line" : typeIcons[pageType(p)]);
 
 const escapeHTML = (s) => String(s).replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]);
@@ -126,7 +140,9 @@ function newPageModal() {
     if (!document.querySelector(`link[href="${extBase}builder.css"]`)) {
         document.head.appendChild(t.link({ rel: "stylesheet", href: extBase + "builder.css" }));
     }
-    const data = store({ title: "", type: "single", layout: "blank", collection: "", collections: [], useParts: true, withItem: true, isSaving: false });
+    const data = store({ title: "", type: "single", layout: "blank", collection: "", collections: [], useParts: true, withItem: true, errorCode: "", isSaving: false });
+    // one page per error: the codes still free
+    const freeCodes = () => errorCodes.filter((x) => !shared.pages.some((p) => isError(p) && p.error_code == x.code));
     const available = siteParts();
     const layouts = () => templates.filter((x) => x.type == data.type);
     const layout = () => layouts().find((x) => x.id == data.layout) || layouts()[0];
@@ -169,11 +185,17 @@ function newPageModal() {
                     record_rules: true,
                 });
             }
+            const isErr = data.type == "error";
+            let pageSlug = isErr ? "error-" + data.errorCode : slug;
+            for (let n = 2; isErr && shared.pages.some((p) => p.slug == pageSlug); n++) {
+                pageSlug = `error-${data.errorCode}-${n}`;
+            }
             const rec = await app.pb.collection("pages").create({
                 title: data.title,
-                slug,
+                slug: pageSlug,
+                error_code: isErr ? data.errorCode : "",
                 published: false,
-                kind: data.type == "part" ? "part" : data.type == "collection" ? "collection" : "",
+                kind: ["part", "collection", "error"].includes(data.type) ? data.type : "",
                 record_collection: data.type == "item" ? col.id : "",
                 list_collection: data.type == "collection" ? col.id : "",
                 // every page uses the site theme (Pages → Theme)
@@ -201,7 +223,33 @@ function newPageModal() {
             choiceCards(pageTypes, () => data.type, (v) => {
                 data.type = v;
                 data.layout = layouts()[0].id;
+                if (v == "error" && !data.errorCode) {
+                    data.errorCode = freeCodes()[0]?.code || "";
+                    data.title ||= freeCodes()[0]?.title || "";
+                }
             }, "gpp-types"),
+            () => data.type == "error"
+                ? t.div(
+                    { rid: "error" + freeCodes().length },
+                    freeCodes().length
+                        ? field({
+                            label: "Shown for",
+                            hint: "One page per error. Visitors see it once it's published; until then (and for the errors without a page), a default page with the site theme.",
+                        }, select({
+                            required: true,
+                            options: () => freeCodes().map((x) => ({ value: x.code, label: `${x.code} · ${x.title}` })),
+                            value: () => data.errorCode,
+                            onchange: (v) => {
+                                const before = errorCodes.find((x) => x.code == data.errorCode)?.title;
+                                data.errorCode = v;
+                                if (!data.title || data.title == before) {
+                                    data.title = errorCodes.find((x) => x.code == v)?.title || data.title;
+                                }
+                            },
+                        }))
+                        : t.div({ className: "alert info" }, "Every error already has its page: edit them from the list (Error pages)."),
+                )
+                : t.div({ rid: "noerror" }),
             () => needsCollection()
                 ? t.div(
                     { rid: "collection" },
@@ -238,7 +286,7 @@ function newPageModal() {
         t.footer(
             { className: "modal-footer" },
             t.button({ type: "button", className: "btn transparent secondary m-r-auto", onclick: () => app.modals.close(modal) }, t.span({ className: "txt" }, "Cancel")),
-            t.button({ type: "submit", "html-form": "gpNewPage", className: () => `btn expanded ${data.isSaving ? "loading" : ""}`, disabled: () => data.isSaving || !data.title || (needsCollection() && !data.collection) }, t.span({ className: "txt" }, "Create")),
+            t.button({ type: "submit", "html-form": "gpNewPage", className: () => `btn expanded ${data.isSaving ? "loading" : ""}`, disabled: () => data.isSaving || !data.title || (needsCollection() && !data.collection) || (data.type == "error" && !data.errorCode) }, t.span({ className: "txt" }, "Create")),
         ),
     );
     modal.onafterclose = () => modal.remove();
@@ -256,6 +304,8 @@ export function typeLabel(p, collections = []) {
             return `Collection page · ${name(p.list_collection)}`;
         case "item":
             return `Single item page · ${name(p.record_collection)}`;
+        case "error":
+            return `Error page · ${p.error_code}`;
     }
     return p.home ? "Home page" : "Single page";
 }
@@ -302,6 +352,8 @@ export function pagePages() {
                             t.td({ className: "txt-hint" }, typeLabel(p, data.collections)),
                             t.td(null, isPart(p)
                                 ? t.span({ className: "txt-hint txt-sm" }, "Placed on pages")
+                                : isError(p)
+                                ? t.span({ className: "txt-hint txt-sm" }, p.published ? `Shown for the ${p.error_code} errors` : "Not used yet: the default page is shown")
                                 : p.published && !p.record_collection
                                 ? t.a({ href: pagePath(p), target: "_blank", rel: "noopener", className: "txt-sm" }, pagePath(p))
                                 : t.span({ className: "txt-hint txt-sm" }, p.record_collection ? pageURL(p.slug, "{id}") : "Draft")),
@@ -309,7 +361,7 @@ export function pagePages() {
                                 null,
                                 isPart(p) ? null : t.button(
                                     { type: "button", className: `label sm gp-status-toggle ${p.published ? "success" : ""}`, ariaDescription: app.attrs.tooltip("Click to toggle"), onclick: () => toggle(p) },
-                                    p.published ? "published" : "draft",
+                                    p.published ? (isError(p) ? "in use" : "published") : "draft",
                                 ),
                             ),
                         )

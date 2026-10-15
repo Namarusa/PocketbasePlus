@@ -33,16 +33,21 @@ const (
 	previewWarnLabel = " (only shown in previews)"
 )
 
-const pagesGuide = `Pages (get_page, propose_page, propose_page_change): web pages of the site, rendered by the server from their HTML at /{slug} (record pages at /{slug}/{record id}). Read a page with get_page before changing it.
+const pagesGuide = `Pages (get_page, propose_page, propose_page_change): web pages of the site, rendered by the server from their HTML at /{slug} (single item pages at /{slug}/{record id}). Read a page with get_page before changing it.
 - Page HTML is plain HTML with inline styles or classes (CSS in "css"), no scripts. Bindings are data-pb-* attributes:
-  - Collection list: <div data-pb-list="products" data-pb-filter="published = true" data-pb-sort="-created" data-pb-limit="12" data-pb-access="rules"> with one child data-pb-item (repeated per record) and optionally one data-pb-empty child (no records). data-pb-access="rules" applies the visitor's API rules (use it unless the page is the gate). Filters can use {{record.field}} (the enclosing record), {{query.param}} (page address), {{auth.id}} (signed-in visitor).
-  - Inside an item, a record page, or with data-pb-user (the signed-in visitor): <h3 data-pb-field="name"></h3>, <img data-pb-field="photo">, relations "brand.name" (2 hops max), dates with data-pb-format="date|datetime|time", <a data-pb-link="product">View</a> (link to the record page with slug "product"), <a data-pb-href="website">Site</a> (URL, email or file field as the target).
+  - Collection list: <div data-pb-list="products" data-pb-filter="published = true" data-pb-sort="-created" data-pb-limit="12" data-pb-access="rules" data-pb-paginate="pages"> with one child data-pb-item (repeated per record) and optionally one data-pb-empty child (no records). data-pb-access="rules" applies the visitor's API rules (use it unless the page is the gate). data-pb-paginate: "pages" (numbered pages of data-pb-limit records) or "more" (a "Show more" link). Filters can use {{record.field}} (the enclosing record), {{query.param}} (page address), {{auth.id}} (signed-in visitor).
+  - Search box of a list: <form data-pb-search="products" data-pb-search-fields="name,brand.name"><input class="input" type="search" placeholder="Search…"><button class="btn" type="submit">Search</button></form> (the value is the list's key: data-pb-key, else its collection; give lists of the same collection different data-pb-key).
+  - Filters of a list: <form data-pb-filters="products" data-pb-filter-fields="kind,brand,price,created" data-pb-sort-options="-price:Most expensive,name:Name"></form> (empty: the server fills a control per field: choices, related records, yes/no, number and date ranges; own fields of the collection, max 12).
+  - Inside an item, a single item page, or with data-pb-user (the signed-in visitor): <h3 data-pb-field="name"></h3>, <img data-pb-field="photo">, relations "brand.name" (2 hops max), dates with data-pb-format="date|datetime|time", <a data-pb-link="product">View</a> (link to the single item page with slug "product"), <a data-pb-href="website">Site</a> (URL, email or file field as the target).
   - Formula: <p data-pb-formula="{{currency &quot;EUR&quot; record.price}} · added {{timeAgo record.created}}"></p> (the functions; record, auth, query without a dot; escape quotes as &quot; in the attribute).
+  - Dynamic attributes and styles, formulas too: data-pb-attr-src="https://cdn.test/{{record.code}}.png" (src, href, alt, title, class, width, height, placeholder, value, aria-label, poster), data-pb-style-color="{{record.color}}" (color, background-color, border-color, width, height, max-width, min-height, font-size, font-weight, opacity, display, text-align, padding, margin, border-radius, border-width, gap, transform).
+  - Conditions (JSON, single-quoted attribute): data-pb-conditions='[{"action":"hide","when":[{"field":"record.image","op":"empty"}]},{"action":"set","prop":"data-pb-style-color","value":"gold","match":"any","when":[{"field":"record.rarity","op":"eq","value":"Rare"},{"formula":"{{gt record.hp 100}}"}]}]'. action: show (shown only when a show rule matches) | hide | set (prop: data-pb-formula, data-pb-attr-…, data-pb-style-…; the last matching rule wins). A rule matches when all its conditions do ("match":"any": one). field: record.x, auth.x, query.x, error.x (through relations: record.brand.name). op: empty, notEmpty, eq, ne, gt, gte, lt, lte, contains, notContains, startsWith, endsWith, isTrue, isFalse.
   - Form: <iframe data-pb-form="contact" style="width:100%;height:640px;border:0"></iframe> (a form's slug).
   - Chart: <div data-pb-chart="bar|line|area|pie|donut" data-pb-collection="orders" data-pb-fn="count|sum|avg|min|max" data-pb-value="total" data-pb-group="status" data-pb-date="created" data-pb-precision="day|week|month" data-pb-range="7d|30d|90d|365d"></div>.
   - Members: data-pb-visible="guests|users|role:<id>" shows an element to some visitors; <form data-pb-action="<page action flow id>"> runs a flow with the form fields (trigger.form.<name>); <form data-pb-logout="/"> signs out; <div data-pb-message></div> shows the message of the last action.
-- Pages use the site theme (kit "basecoat", older pages may be plain) and the kit's component classes (btn, btn-outline, btn-secondary, card, badge, alert, input, label, table); Tailwind utility classes aren't available, so lay out with inline styles. Plain pages: inline styles or CSS.
-- New pages are drafts (published false) unless the user asked to publish. Site parts (kind "part") are reusable headers and footers placed with <div data-pb-part="slug"></div>.
+- Pages use the site theme (kit "basecoat", older pages may be plain) and the kit's component classes (btn, btn-outline, btn-secondary, card, badge, alert, input, label, table); Tailwind utility classes aren't available, so lay out with inline styles. Plain pages: inline styles or CSS. The theme itself (colors, fonts, light/dark) is set by the user in Pages → Theme, not per page.
+- Kinds: page (a single page); collection (lists list_collection: by default a title, a search box, filters and a paginated list, cards linking to the collection's single item page if there's one); record (a single item page of record_collection); part (site parts: reusable headers and footers placed with <div data-pb-part="slug"></div>); error (shown instead of the built-in page of an error: error_code 404 not found, 401 sign-in needed, 403 not allowed, 500 page failure; one page per code, used once published; {{error.code}}, {{error.title}}, {{error.message}}, {{error.path}} the address asked, {{error.signin}} the sign-in page address or empty).
+- New pages are drafts (published false) unless the user asked to publish.
 - propose_page_change edits elements by ref (from get_page's outline): replace, before, after, append, prepend, remove; or "html" replaces the whole body. Keep the existing design: change only what's asked. The card shows the rendered result; binding errors come back to you to fix.`
 
 func bindAssistant() {
@@ -55,11 +60,12 @@ func bindAssistant() {
 					"page":        str("Page id or slug"),
 					"element_ref": str("A ref of the outline: that element's HTML"),
 				}, "page")}, Run: toolGetPage},
-			{Def: ai.Tool{Name: "propose_page", Description: "Proposes a new page (single page, collection page, single item page or site part); it uses the site theme. Checked and previewed by the server. The user applies it.",
+			{Def: ai.Tool{Name: "propose_page", Description: "Proposes a new page (single page, collection page, single item page, site part or error page); it uses the site theme. Checked and previewed by the server. The user applies it.",
 				Parameters: obj(map[string]any{
 					"title":             str("Page title"),
-					"slug":              str("Address: lowercase letters, digits and dashes (/slug)"),
-					"kind":              str("page (default: a single page) | collection (lists a collection: set list_collection) | record (a single item page, one record per address: set record_collection) | part (site part)"),
+					"slug":              str("Address: lowercase letters, digits and dashes (/slug); not for error pages"),
+					"kind":              str("page (default: a single page) | collection (lists a collection: set list_collection) | record (a single item page, one record per address: set record_collection) | part (site part) | error (an error page: set error_code)"),
+					"error_code":        str("Error pages: 404 | 401 | 403 | 500"),
 					"list_collection":   str("Collection pages: the collection listed"),
 					"record_collection": str("Single item pages: the collection"),
 					"record_filter":     str("Single item pages: a filter the shown records must match (optional)"),
@@ -69,7 +75,7 @@ func bindAssistant() {
 					"published":         boolean("Publish it now (default false: a draft)"),
 					"access":            str("public (default) | users | roles"),
 					"roles":             strList("Role ids (access roles)"),
-				}, "title", "slug", "html")}, Run: toolProposePage},
+				}, "title", "html")}, Run: toolProposePage},
 			{Def: ai.Tool{Name: "propose_page_change", Description: "Proposes changes to a page: settings, edits of elements by ref, or the whole HTML. Previewed by the server. The user applies it (a version is kept).",
 				Parameters: obj(map[string]any{
 					"page":          str("Page id or slug"),
@@ -185,6 +191,8 @@ func pageKind(p *core.Record) string {
 		return "part"
 	case p.GetString("kind") == kindCollection:
 		return "collection"
+	case p.GetString("kind") == kindError:
+		return "error " + p.GetString("error_code")
 	case p.GetString("record_collection") != "":
 		return "record"
 	}
@@ -197,6 +205,9 @@ func pagePath(p *core.Record) string {
 		return "(site part)"
 	case "record":
 		return "/" + p.GetString("slug") + "/{record id}"
+	}
+	if p.GetString("kind") == kindError {
+		return "(shown for the " + p.GetString("error_code") + " errors)"
 	}
 	if p.GetBool("home") {
 		return "/"
@@ -354,6 +365,10 @@ func previewPage(ctx context.Context, app core.App, page *core.Record) (string, 
 			view.Scope = scope{col: col, rec: list[0]}
 		}
 	}
+	if page.GetString("kind") == kindError {
+		code, _ := strconv.Atoi(page.GetString("error_code"))
+		view.Error = errorInfo(app, code, "/an/address")
+	}
 	out, _, err := render(ctx, app, view, url.Values{}, true)
 	if err != nil {
 		return "", nil, err
@@ -384,10 +399,23 @@ func toolProposePage(c *assistant.ToolContext, args map[string]any) (any, error)
 	}
 	page := core.NewRecord(col)
 	slug := argStr(args, "slug")
+	if argStr(args, "kind") == kindError && slug == "" {
+		// an error page isn't served at its slug: any free one
+		slug = "error-" + argStr(args, "error_code")
+		for i := 2; i < 100; i++ {
+			if _, err := c.App.FindFirstRecordByData(Collection, "slug", slug); err != nil {
+				break
+			}
+			slug = fmt.Sprintf("error-%s-%d", argStr(args, "error_code"), i)
+		}
+	}
 	page.Load(map[string]any{
 		"title": argStr(args, "title"), "slug": slug, "description": argStr(args, "description"),
 		"html": nodeHTML(body), "css": argStr(args, "css"), "published": args["published"] == true,
 	})
+	if slug == "" {
+		return nil, errors.New("a page needs a slug")
+	}
 	if _, err := c.App.FindFirstRecordByData(Collection, "slug", slug); err == nil {
 		return nil, fmt.Errorf("the slug %q is taken: pick another one", slug)
 	}
@@ -400,17 +428,20 @@ func toolProposePage(c *assistant.ToolContext, args map[string]any) (any, error)
 	case kindCollection:
 		page.Set("kind", kindCollection)
 		page.Set("list_collection", argStr(args, "list_collection"))
+	case kindError:
+		page.Set("kind", kindError)
+		page.Set("error_code", argStr(args, "error_code"))
 	case "record":
 		if argStr(args, "record_collection") == "" {
 			return nil, errors.New("a record page needs record_collection")
 		}
 	}
-	if rc := argStr(args, "record_collection"); rc != "" && argStr(args, "kind") != "part" {
+	if rc := argStr(args, "record_collection"); rc != "" && argStr(args, "kind") != "part" && argStr(args, "kind") != kindError {
 		page.Set("record_collection", rc)
 		page.Set("record_filter", argStr(args, "record_filter"))
 		page.Set("record_rules", true)
 	}
-	if a := argStr(args, "access"); a != "" {
+	if a := argStr(args, "access"); a != "" && page.GetString("kind") != kindError {
 		page.Set("access", a)
 		page.Set("roles", args["roles"])
 	}
@@ -427,14 +458,22 @@ func toolProposePage(c *assistant.ToolContext, args map[string]any) (any, error)
 	details := map[string]any{"address": pagePath(page), "published": page.GetBool("published")}
 	previewDetails(details, preview)
 	payload := map[string]any{}
-	for _, k := range []string{"title", "slug", "description", "html", "css", "published", "kit", "kind", "list_collection", "record_collection", "record_filter", "record_rules", "access", "roles"} {
+	for _, k := range []string{"title", "slug", "description", "html", "css", "published", "kit", "kind", "list_collection", "error_code", "record_collection", "record_filter", "record_rules", "access", "roles"} {
 		payload[k] = page.Get(k)
 	}
 	state := "draft"
 	if page.GetBool("published") {
 		state = "published"
 	}
-	return c.Propose(actionPage, "New page “"+page.GetString("title")+"”", fmt.Sprintf("%s at %s (%s)", map[string]string{"page": "Single page", "collection": "Collection page", "record": "Single item page", "part": "Site part"}[pageKind(page)], pagePath(page), state), details, payload), nil
+	what := fmt.Sprintf("%s at %s (%s)", map[string]string{"page": "Single page", "collection": "Collection page", "record": "Single item page", "part": "Site part"}[pageKind(page)], pagePath(page), state)
+	if page.GetString("kind") == kindError {
+		state = "draft: the built-in page is shown until it's published"
+		if page.GetBool("published") {
+			state = "in use"
+		}
+		what = fmt.Sprintf("Error page · %s (%s)", page.GetString("error_code"), state)
+	}
+	return c.Propose(actionPage, "New page “"+page.GetString("title")+"”", what, details, payload), nil
 }
 
 func toolProposePageChange(c *assistant.ToolContext, args map[string]any) (any, error) {
@@ -444,8 +483,13 @@ func toolProposePageChange(c *assistant.ToolContext, args map[string]any) (any, 
 	}
 	draft := page.Fresh()
 	changes := []string{}
-	for _, k := range []string{"title", "slug", "description", "record_filter"} {
+	for _, k := range []string{"title", "slug", "description", "record_filter", "list_collection"} {
 		if v, ok := args[k].(string); ok && strings.TrimSpace(v) != page.GetString(k) {
+			if k == "list_collection" {
+				if c, err := c.App.FindCachedCollectionByNameOrId(strings.TrimSpace(v)); err == nil && c.Id == page.GetString(k) {
+					continue
+				}
+			}
 			draft.Set(k, strings.TrimSpace(v))
 			changes = append(changes, k)
 		}
@@ -509,7 +553,7 @@ func toolProposePageChange(c *assistant.ToolContext, args map[string]any) (any, 
 	details := map[string]any{"address": pagePath(draft), "changes": changes}
 	previewDetails(details, preview)
 	payload := map[string]any{"page_id": page.Id, "updated": page.GetString("updated")}
-	for _, k := range []string{"title", "slug", "description", "record_filter", "published", "html", "css"} {
+	for _, k := range []string{"title", "slug", "description", "record_filter", "list_collection", "published", "html", "css"} {
 		payload[k] = draft.Get(k)
 	}
 	payload["html_changed"] = body != nil
@@ -593,8 +637,10 @@ func applyPageProposal(ctx context.Context, app core.App, auth *core.Record, p m
 			return nil, errors.New("the page was changed since this proposal: ask for a new one")
 		}
 		_ = snapshot(app, page, "before the AI assistant's change")
-		for _, k := range []string{"title", "slug", "description", "record_filter", "published", "html", "css"} {
-			page.Set(k, p[k])
+		for _, k := range []string{"title", "slug", "description", "record_filter", "list_collection", "published", "html", "css"} {
+			if v, ok := p[k]; ok {
+				page.Set(k, v)
+			}
 		}
 		if p["html_changed"] == true {
 			page.Set("project", nil) // the builder loads the new HTML

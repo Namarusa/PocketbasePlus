@@ -501,6 +501,7 @@ export function pageBuilder(route) {
             return users ? [{ path: "id", label: "id" }, ...bindableFields(users, "text", byName).map((b) => ({ path: b.path, label: b.label }))] : [];
         },
         viewAs: () => data.viewAs || "",
+        isErrorPage: () => data.page?.kind == "error",
         onChange: (comp) => {
             comp._pbKey = bindingKey(comp);
             applySamples(comp);
@@ -1348,6 +1349,7 @@ export function pageBuilder(route) {
         const p = data.page;
         const draft = store({ title: p.title, slug: p.slug, description: p.description, published: p.published, home: p.home, record_filter: p.record_filter, record_rules: !!p.record_rules, kit: p.kit, list_collection: p.list_collection || "", access: p.access, roles: [...(p.roles || [])] });
         const col = recordCollection();
+        const isErr = p.kind == "error";
 
         function apply() {
             const kitChanged = draft.kit != data.page.kit;
@@ -1382,11 +1384,13 @@ export function pageBuilder(route) {
                 { id: "gpPageSettings", className: "modal-content", onsubmit: (e) => (e.preventDefault(), apply()) },
                 t.div({ className: "gpp-page-type m-b-sm" }, t.span({ className: "txt-hint" }, "Type: "), t.strong(null, typeLabel(p, collections))),
                 field({ label: "Title", hint: "The browser tab title (single item pages add the record name)." }, textInput(draft, "title", { required: true })),
-                field(
-                    { label: "Slug", hint: () => "Address: " + pageURL(slugify(draft.slug), col ? "{record id}" : "") },
-                    textInput(draft, "slug", { required: true, className: "txt-code" }),
-                ),
-                field({ label: "Description", hint: "Shown by search engines." }, t.textarea({ rows: 2, maxLength: 500, value: () => draft.description || "", oninput: (e) => (draft.description = e.target.value) })),
+                isErr
+                    ? null
+                    : field(
+                        { label: "Slug", hint: () => "Address: " + pageURL(slugify(draft.slug), col ? "{record id}" : "") },
+                        textInput(draft, "slug", { required: true, className: "txt-code" }),
+                    ),
+                isErr ? null : field({ label: "Description", hint: "Shown by search engines." }, t.textarea({ rows: 2, maxLength: 500, value: () => draft.description || "", oninput: (e) => (draft.description = e.target.value) })),
                 col
                     ? t.div(
                         null,
@@ -1412,7 +1416,7 @@ export function pageBuilder(route) {
                             t.div({ className: "field-help" }, "Like the API: a record the visitor can't view gets a 404 (guests are asked to sign in), and the fields their roles can't read are hidden."),
                         ),
                     )
-                    : p.isPart
+                    : p.isPart || isErr
                         ? null
                         : t.div({ className: "m-b-sm" }, switchInput(draft, "home", "Home page (also served at /)")),
                 p.kind == "collection"
@@ -1438,7 +1442,7 @@ export function pageBuilder(route) {
                         ),
                         t.button({ type: "button", className: "btn sm", onclick: () => (draft.kit = true) }, t.i({ className: "ri-palette-line", ariaHidden: true }), t.span({ className: "txt" }, "Use the site theme")),
                     )),
-                p.isPart
+                p.isPart || isErr
                     ? null
                     : field(
                         { label: "Who can open the page", hint: "Guests opening a protected page are sent to the sign in page (Pages → Members & sign in). Hide elements by role with their \"Visible to\" setting." },
@@ -1453,7 +1457,7 @@ export function pageBuilder(route) {
                             onchange: (v) => (draft.access = v),
                         }),
                     ),
-                () => (!p.isPart && draft.access == "roles"
+                () => (!p.isPart && !isErr && draft.access == "roles"
                     ? t.div(
                         { rid: "roles", className: "gpp-role-checks m-b-sm" },
                         members.roles.length
@@ -1474,7 +1478,9 @@ export function pageBuilder(route) {
                     : null),
                 p.isPart
                     ? t.p({ className: "txt-hint m-0" }, "A site part isn't published on its own: it's shown on the pages where it's placed (Site parts blocks).")
-                    : switchInput(draft, "published", "Published"),
+                    : isErr
+                        ? switchInput(draft, "published", `In use: shown for the ${p.error_code} errors (off: the default page)`)
+                        : switchInput(draft, "published", "Published"),
             ),
             t.footer(
                 { className: "modal-footer" },

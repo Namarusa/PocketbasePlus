@@ -85,6 +85,7 @@ type renderer struct {
 	lists      *listState // pagination and search (paging.go)
 	pagerCSS   bool
 	filterCSS  bool
+	errorInfo  map[string]any // error pages: the error shown ({{error.x}})
 }
 
 // pageView is what's needed to render a page.
@@ -98,6 +99,7 @@ type pageView struct {
 	Visitor     visitor
 	Path        string         // the URL path and query of the page
 	Flash       *session.Flash // message of the last action
+	Error       map[string]any // error pages: {{error.code}}, {{error.title}}... (errors.go)
 }
 
 // interactiveClasses are the Basecoat components that need its script
@@ -116,7 +118,7 @@ func render(ctx context.Context, app core.App, p pageView, query url.Values, pre
 	}
 	p.CSS += expandParts(app, body, preview)
 	sanitize(body)
-	r := &renderer{app: app, ctx: ctx, query: query, preview: preview, budget: maxRecords, visitor: p.Visitor, info: p.Visitor.requestInfo(), path: p.Path, flash: p.Flash}
+	r := &renderer{app: app, ctx: ctx, query: query, preview: preview, budget: maxRecords, visitor: p.Visitor, info: p.Visitor.requestInfo(), path: p.Path, flash: p.Flash, errorInfo: p.Error}
 	r.scanLists(body)
 	r.walk(body, p.Scope, 0)
 	if r.pagerCSS {

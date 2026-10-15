@@ -686,6 +686,14 @@ embedded) and publishes them on your site. **New page** asks what kind of page y
   single item page at the same time, and the cards link to it.
 - **Single item page** (`/slug/{id}`): shows one record per address. Layout: Detail.
 - **Site part**: a header, footer or sidebar placed on several pages.
+- **Error page**: what visitors see for an address without a page (**404**), a page to sign in for when there's no
+  sign in page to send them to (**401**), a page their account can't open (**403**) and a page that failed (**500**).
+  One page per error, used once it's on (*In use*); the errors without one get a default page with the site theme.
+  Formulas read the error: `{{error.code}}`, `{{error.title}}`, `{{error.message}}`, `{{error.path}}` (the address
+  asked) and `{{error.signin}}` (the sign in page, back to that address); the layout shows *Sign in* only for a 401
+  and *Sign in with another account* only for a 403 (conditions). A sign out form with `data-pb-logout="."` comes
+  back to the same address. Wrong requests (400) and too many requests (429) concern the API and the forms, which
+  answer them in place (the form shows the message), so they have no page.
 
 Every page uses the site theme (**Pages → Theme**): there's no styling choice per page. Blocks in the **Data** group
 show your collections:

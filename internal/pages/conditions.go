@@ -49,7 +49,7 @@ type condition struct {
 	Formula string `json:"formula,omitempty"`
 }
 
-var conditionFieldRegex = regexp.MustCompile(`^(record|auth|query)(\.[A-Za-z0-9_]+){1,4}$`)
+var conditionFieldRegex = regexp.MustCompile(`^(record|auth|query|error)(\.[A-Za-z0-9_]+){1,4}$`)
 
 func parseConditions(src string) ([]condRule, error) {
 	var rules []condRule
