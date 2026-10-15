@@ -86,7 +86,7 @@ Back up `pb_data` first (Settings → Backups, or a copy of the folder while the
 
 One image, `ghcr.io/namarusa/pocketbaseplus`, for **linux/amd64**, **linux/arm64** and **linux/arm/v7**: Docker picks the
 right one on Linux servers, Docker Desktop (Windows, macOS Intel and Apple Silicon), Synology, QNAP, Unraid, TrueNAS
-SCALE, ZimaOS / CasaOS, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, `0.1.0`, `0.1`.
+SCALE, ZimaOS / CasaOS, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, the version (`0.4.0`) and its minor line (`0.4`).
 
 ```sh
 docker run -d --name pocketbaseplus -p 8090:8090 \
@@ -111,6 +111,30 @@ the sources).
   NAS app managers.
 - **HTTPS**: put the container behind your reverse proxy (Caddy, Traefik, Nginx Proxy Manager, the NAS one) and set
   Settings → Application → *User IP proxy headers* (see [Security](#security)).
+- **Coolify**: + New → *Docker Compose (Empty)*, with:
+
+  ```yaml
+  services:
+    pocketbaseplus:
+      image: ghcr.io/namarusa/pocketbaseplus:0.4
+      environment:
+        - SERVICE_FQDN_POCKETBASEPLUS_8090
+        - TZ=${TZ:-UTC}
+        - POCKETBASEPLUS_ADMIN_EMAIL=${ADMIN_EMAIL}
+        - POCKETBASEPLUS_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+        - POCKETBASEPLUS_ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      volumes:
+        - pocketbaseplus-data:/pb_data
+      restart: unless-stopped
+  volumes:
+    pocketbaseplus-data:
+  ```
+
+  Each `${…}` shows in the Environment Variables tab (remove `ADMIN_EMAIL` and `ADMIN_PASSWORD` after the first
+  start, keep `ENCRYPTION_KEY` safe). No `ports:`: set the domain on the service with the container port
+  (`https://app.example.com:8090`); Coolify's proxy serves it over HTTPS. Leave Coolify's own health check off (the
+  image has no curl or wget; its built-in check shows *healthy*). Then set Settings → Application → *Application URL*
+  to the domain and *User IP proxy headers* to `X-Forwarded-For`. Redeploy pulls the latest `0.4.x`.
 - **Commands**: `docker exec pocketbaseplus pocketbaseplus --dir /pb_data superuser upsert EMAIL PASS` (or
   `pages uninstall`, `migrate`...).
 
