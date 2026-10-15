@@ -239,16 +239,23 @@ func toolProposeDashboard(t *toolbox, args map[string]any) (any, error) {
 
 type templateDraft struct {
 	Name, Subject, HTML, Text, SampleCollection string
+	Folder, AccountEmail, AccountCollection     string
 	Marketing                                   bool
 }
 
 func draftFrom(args map[string]any) (templateDraft, error) {
 	d := templateDraft{
-		Name:             argString(args, "name"),
-		Subject:          argString(args, "subject"),
-		HTML:             fmt.Sprint(valueOr(args["html"], "")),
-		Text:             fmt.Sprint(valueOr(args["text"], "")),
-		SampleCollection: argString(args, "sample_collection"),
+		Name:              argString(args, "name"),
+		Subject:           argString(args, "subject"),
+		HTML:              fmt.Sprint(valueOr(args["html"], "")),
+		Text:              fmt.Sprint(valueOr(args["text"], "")),
+		SampleCollection:  argString(args, "sample_collection"),
+		Folder:            argString(args, "folder"),
+		AccountEmail:      argString(args, "account_email"),
+		AccountCollection: argString(args, "account_collection"),
+	}
+	if d.AccountEmail != "" {
+		d.Marketing, d.Folder = false, ""
 	}
 	d.Marketing, _ = args["marketing"].(bool)
 	if d.Name == "" || d.Subject == "" || strings.TrimSpace(d.HTML) == "" {
@@ -261,7 +268,15 @@ func draftFrom(args map[string]any) (templateDraft, error) {
 }
 
 func (d templateDraft) payload() map[string]any {
-	return map[string]any{"name": d.Name, "subject": d.Subject, "html": d.HTML, "text": d.Text, "marketing": d.Marketing, "sample_collection": d.SampleCollection}
+	return map[string]any{"name": d.Name, "subject": d.Subject, "html": d.HTML, "text": d.Text, "marketing": d.Marketing, "sample_collection": d.SampleCollection,
+		"folder": d.Folder, "account_email": d.AccountEmail, "account_collection": d.AccountCollection}
+}
+
+func nonEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func valueOr(v any, def any) any {
@@ -281,14 +296,31 @@ func toolProposeEmailTemplate(t *toolbox, args map[string]any) (any, error) {
 			return nil, err
 		}
 	}
+	if d.AccountEmail != "" {
+		if err := mail.CheckAccountTemplate(t.app, d.AccountEmail, d.AccountCollection); err != nil {
+			return nil, err
+		}
+		if d.SampleCollection == "" {
+			d.SampleCollection = valueOr(nonEmpty(d.AccountCollection), "users").(string)
+		}
+	}
 	record, _ := t.sampleRecord(d.SampleCollection, "")
-	out, err := mail.Render(d.Subject, d.HTML, d.Text, mail.TemplateData(t.app, record, nil, t.auth.Email()))
+	data := mail.TemplateData(t.app, record, nil, t.auth.Email())
+	if d.AccountEmail != "" {
+		for k, v := range mail.SampleAccountValues(t.app, d.AccountEmail) {
+			data[k] = v
+		}
+	}
+	out, err := mail.Render(d.Subject, d.HTML, d.Text, data)
 	if err != nil {
 		return nil, fmt.Errorf("template error: %w", err)
 	}
 	kind := "Transactional"
 	if d.Marketing {
 		kind = "Marketing"
+	}
+	if d.AccountEmail != "" {
+		kind = "Account (" + strings.ReplaceAll(d.AccountEmail, "_", " ") + ")"
 	}
 	return t.propose(&Action{
 		Type:    ActionTemplate,
@@ -328,6 +360,9 @@ func createTemplate(app core.App, ctxApp core.App, p map[string]any, forceMarket
 	rec.Set("html", p["html"])
 	rec.Set("text", p["text"])
 	rec.Set("sample_collection", p["sample_collection"])
+	rec.Set("folder", p["folder"])
+	rec.Set("account_email", p["account_email"])
+	rec.Set("account_collection", p["account_collection"])
 	marketing, _ := p["marketing"].(bool)
 	rec.Set("marketing", marketing || forceMarketing)
 	return rec, save(rec)

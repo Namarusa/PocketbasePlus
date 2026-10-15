@@ -247,6 +247,15 @@ The extension is plain JavaScript using the dashboard globals (`t`, `store`, `wa
   - **On a schedule**: cron (UTC). With a recipient field it sends one email per matching record; without one it
     sends a single digest of `.records` to the static recipients.
 - Recipients: a record field (`email`) or one relation hop (`owner.email`), plus static addresses.
+- **Folders**: a template can go in a folder (in the editor, or *Move to a folder* in the list). The list groups them
+  by folder (collapsible, remembered), with a search; renaming a folder moves its templates.
+- **Account emails**: the emails PocketBase sends to the accounts (verification, password reset, email change,
+  one-time code, sign-in alert) are listed in the *Account emails* group. *Design it* creates a template from the email
+  PocketBase sends now, for all the auth collections (with or without the superusers) or one of them (its own
+  template wins). Data: `.record` (the account), `.app`, `.recipient.email`, `.link` (the confirmation
+  link: put it in a button) and `.token`, `.new_email`, `.otp`, `.otp_id`, `.alert_info` depending on the email; the
+  preview fills them with samples. If the template fails, PocketBase's email is sent instead. These templates can't
+  be sent by automations, manual sends or flows; deleting one brings PocketBase's email back.
 - **Marketing emails** (template option): an unsubscribe link is added at the end (or place `{{.unsubscribe_url}}`
   yourself), with the `List-Unsubscribe` and one-click headers (RFC 8058). The link opens `/email/unsubscribe` (a
   confirmation page, so that link scanners don't unsubscribe anybody) and adds the address to `email_unsubscribes`

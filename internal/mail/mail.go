@@ -51,7 +51,7 @@ func Register(app core.App) *Engine {
 	e := &Engine{app: app}
 
 	app.OnRecordValidate(templatesCollection).BindFunc(func(ev *core.RecordEvent) error {
-		if err := validateTemplate(ev.Record); err != nil {
+		if err := validateTemplate(ev.App, ev.Record); err != nil {
 			return err
 		}
 		return ev.Next()
@@ -96,6 +96,8 @@ func Register(app core.App) *Engine {
 		}
 		return nil
 	})
+
+	bindAccountEmails(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.App.Cron().MustAdd(queueCronJobId, "* * * * *", e.ProcessQueue)
@@ -305,8 +307,10 @@ func (e *Engine) enqueueAndKick(a *core.Record, record *core.Record, records []*
 
 // --- validation ---------------------------------------------------------
 
-func validateTemplate(r *core.Record) error {
+func validateTemplate(app core.App, r *core.Record) error {
 	errs := validation.Errors{}
+	r.Set("folder", strings.Join(strings.Fields(r.GetString("folder")), " "))
+	validateAccountTemplate(app, r, errs)
 	if _, err := Render(r.GetString("subject"), "", "", nil, true); err != nil {
 		errs["subject"] = validation.NewError("invalid_template", err.Error())
 	}
@@ -331,6 +335,10 @@ func validateAutomation(app core.App, r *core.Record) error {
 	collectionName := r.GetString("collection")
 	recipientField := strings.TrimSpace(r.GetString("recipient_field"))
 	static := ParseAddresses(r.GetString("static_recipients"))
+
+	if tpl, err := app.FindRecordById(templatesCollection, r.GetString("template")); err == nil && tpl.GetString("account_email") != "" {
+		errs["template"] = validation.NewError("account_template", "This template replaces an account email: it can't be sent by an automation.")
+	}
 
 	var collection *core.Collection
 	if collectionName != "" {

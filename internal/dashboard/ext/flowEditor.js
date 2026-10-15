@@ -265,7 +265,7 @@ export function pageFlowEditor(route) {
             const [cols, all, templates, flows] = await Promise.all([
                 allCollections(true).then(() => userCollections()),
                 allCollections(),
-                app.pb.collection("email_templates").getFullList({ sort: "name", fields: "id,name", requestKey: null }),
+                app.pb.collection("email_templates").getFullList({ sort: "folder,name", fields: "id,name,folder", filter: "account_email = ''", requestKey: null }),
                 app.pb.collection("flows").getFullList({ sort: "name", fields: "id,name,trigger_type", requestKey: null }),
             ]);
             data.collections = cols;
@@ -2569,7 +2569,7 @@ export function pageFlowEditor(route) {
                         t.div({ className: "col-lg-6" }, field({ label: "Email template" }, select({
                             required: true,
                             placeholder: "- Select template -",
-                            options: () => data.templates.map((tpl) => ({ value: tpl.id, label: tpl.name })),
+                            options: () => data.templates.map((tpl) => ({ value: tpl.id, label: tpl.folder ? `${tpl.folder} / ${tpl.name}` : tpl.name })),
                             value: () => c.template,
                             onchange: (v) => {
                                 c.template = v;

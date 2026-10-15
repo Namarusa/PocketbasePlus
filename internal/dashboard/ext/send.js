@@ -46,7 +46,7 @@ export function pageSend(route) {
     async function init() {
         try {
             const [templates, collections] = await Promise.all([
-                app.pb.collection("email_templates").getFullList({ sort: "name", fields: "id,name", requestKey: "gpSendTemplates" }),
+                app.pb.collection("email_templates").getFullList({ sort: "folder,name", fields: "id,name,folder", filter: "account_email = ''", requestKey: "gpSendTemplates" }),
                 userCollections(),
             ]);
             data.templates = templates;
@@ -200,7 +200,7 @@ export function pageSend(route) {
                     t.div({ className: "col-lg-6" }, field({ label: "Template", name: "templateId" }, select({
                         id: "templateId",
                         required: true,
-                        options: () => data.templates.map((tpl) => ({ value: tpl.id, label: tpl.name })),
+                        options: () => data.templates.map((tpl) => ({ value: tpl.id, label: tpl.folder ? `${tpl.folder} / ${tpl.name}` : tpl.name })),
                         value: () => data.templateId,
                         onchange: (v) => (data.templateId = v),
                     }))),

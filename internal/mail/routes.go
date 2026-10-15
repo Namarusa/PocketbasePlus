@@ -18,6 +18,8 @@ func registerRoutes(e *Engine, se *core.ServeEvent) {
 	g.POST("/preview", e.preview)
 	g.POST("/test", e.sendTest)
 	g.POST("/send", e.sendManual)
+	g.GET("/accounts", listAccountEmails)
+	g.POST("/accounts/customize", e.customizeAccount)
 	g.POST("/automations/{id}/run", e.runAutomation)
 	g.POST("/messages/{id}/retry", e.retryMessage)
 	g.POST("/messages/{id}/cancel", e.cancelMessage)
@@ -36,7 +38,8 @@ type renderBody struct {
 	Text       *string        `json:"text"`
 	Collection string         `json:"collection"`
 	RecordId   string         `json:"recordId"`
-	Data       map[string]any `json:"data"` // sample record data
+	Data       map[string]any `json:"data"`    // sample record data
+	Account    string         `json:"account"` // the account email the template replaces (sample link, code...)
 }
 
 // renderFromBody returns the rendered content, a template error (expected
@@ -49,6 +52,9 @@ func (e *Engine) renderFromBody(re *core.RequestEvent, body renderBody, to strin
 			return Rendered{}, nil, re.NotFoundError("Template not found.", err)
 		}
 		subject, html, text = tpl.GetString("subject"), tpl.GetString("html"), tpl.GetString("text")
+		if body.Account == "" {
+			body.Account = tpl.GetString("account_email")
+		}
 	}
 	if body.Subject != nil {
 		subject = *body.Subject
@@ -77,6 +83,12 @@ func (e *Engine) renderFromBody(re *core.RequestEvent, body renderBody, to strin
 	data := TemplateData(re.App, record, nil, to)
 	if record == nil && body.Data != nil {
 		data["record"] = body.Data
+	}
+	if _, ok := accountEmail(body.Account); ok {
+		delete(data, "unsubscribe_url")
+		for k, v := range SampleAccountValues(re.App, body.Account) {
+			data[k] = v
+		}
 	}
 
 	out, err := Render(subject, html, text, data)

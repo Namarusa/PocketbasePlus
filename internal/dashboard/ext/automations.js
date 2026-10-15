@@ -63,7 +63,7 @@ export function pageAutomations() {
         try {
             const [automations, templates, collections] = await Promise.all([
                 app.pb.collection("email_automations").getFullList({ sort: "name", requestKey: "gpAutomations" }),
-                app.pb.collection("email_templates").getFullList({ sort: "name", fields: "id,name", requestKey: "gpAutoTemplates" }),
+                app.pb.collection("email_templates").getFullList({ sort: "folder,name", fields: "id,name,folder", filter: "account_email = ''", requestKey: "gpAutoTemplates" }),
                 userCollections(),
             ]);
             data.automations = automations;
@@ -180,7 +180,7 @@ export function pageAutomations() {
                     id: "template",
                     name: "template",
                     required: true,
-                    options: () => data.templates.map((tpl) => ({ value: tpl.id, label: tpl.name })),
+                    options: () => data.templates.map((tpl) => ({ value: tpl.id, label: tpl.folder ? `${tpl.folder} / ${tpl.name}` : tpl.name })),
                     value: () => data.form.template,
                     onchange: (v) => (data.form.template = v),
                 }))),

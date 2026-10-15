@@ -44,6 +44,9 @@ func (e *Engine) SendBulk(app core.App, req BulkRequest) (*BulkResult, error) {
 	if err != nil {
 		return nil, errors.New("template not found")
 	}
+	if IsAccountTemplate(tpl) {
+		return nil, ErrAccountTemplate
+	}
 	marketing := tpl.GetBool("marketing")
 	static := ParseAddresses(req.StaticRecipients)
 

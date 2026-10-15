@@ -196,12 +196,15 @@ func toolDefinitions() []ai.Tool {
 			}, "panels")},
 		{Name: "propose_email_template", Description: "Proposes a new email template. The user applies it.",
 			Parameters: obj(map[string]any{
-				"name":              str("Template name"),
-				"subject":           str("Subject (Go template)"),
-				"html":              str("HTML body"),
-				"text":              str("Plain text version"),
-				"marketing":         boolean("Marketing email (unsubscribe link, opt-out list)"),
-				"sample_collection": str("Collection whose records the template is about (preview)"),
+				"name":               str("Template name"),
+				"subject":            str("Subject (Go template)"),
+				"html":               str("HTML body"),
+				"text":               str("Plain text version"),
+				"marketing":          boolean("Marketing email (unsubscribe link, opt-out list)"),
+				"sample_collection":  str("Collection whose records the template is about (preview)"),
+				"folder":             str("Folder grouping it in the list (optional; reuse an existing one when it fits)"),
+				"account_email":      str("Only to design an email PocketBase sends to accounts: verification | password_reset | email_change | otp | login_alert. Its variables: .record (the account), .link (the confirmation link: put it in a button) and .token, .new_email, .otp, .alert_info depending on the email"),
+				"account_collection": str("account_email: the auth collection (empty: all of them but the superusers; \"*\": all of them, superusers included)"),
 			}, "name", "subject", "html")},
 		{Name: "propose_campaign", Description: "Proposes an email campaign: a marketing email sent once per address to recipients selected in a collection. Counts the recipients first. The user applies (sends) it.",
 			Parameters: obj(map[string]any{
@@ -386,7 +389,8 @@ func toolListResources(t *toolbox, args map[string]any) (any, error) {
 		for _, r := range list {
 			vars, _ := mail.TemplateVariables(r.GetString("subject"), r.GetString("html"), r.GetString("text"))
 			out = append(out, map[string]any{
-				"id": r.Id, "name": r.GetString("name"), "subject": r.GetString("subject"),
+				"id": r.Id, "name": r.GetString("name"), "subject": r.GetString("subject"), "folder": r.GetString("folder"),
+				"account_email": r.GetString("account_email"), "account_collection": r.GetString("account_collection"),
 				"marketing": r.GetBool("marketing"), "variables": vars, "sample_collection": r.GetString("sample_collection"),
 			})
 		}

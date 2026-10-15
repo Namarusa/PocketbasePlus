@@ -1,4 +1,5 @@
 import {
+    allCollections,
     api,
     debounce,
     emailFrame,
@@ -41,7 +42,13 @@ export function pageTemplateEditor(route) {
             text: "",
             sample_collection: "",
             marketing: false,
+            folder: "",
+            account_email: "",
+            account_collection: "",
         },
+        accounts: [], // the account emails (kind, label, variables)
+        folders: [],
+        authCollections: [],
         sampleDataText: `{\n  "name": "Ada"\n}`,
         sampleRecordId: "",
         slugTouched: false,
@@ -77,6 +84,7 @@ export function pageTemplateEditor(route) {
             collection: data.form.sample_collection,
             recordId: data.sampleRecordId,
             data: data.form.sample_collection ? undefined : parsedSampleData(),
+            account: data.form.account_email,
         };
     }
 
@@ -96,8 +104,17 @@ export function pageTemplateEditor(route) {
         }
     }, 300);
 
+    const account = () => data.accounts.find((a) => a.kind == data.form.account_email);
+
     async function load() {
         userCollections().then((list) => (data.collections = list));
+        allCollections().then((list) => (data.authCollections = list.filter((c) => c.type == "auth").map((c) => c.name)));
+        api("/api/emails/accounts", { requestKey: null }).then((list) => (data.accounts = list)).catch(() => {});
+        app.pb
+            .collection("email_templates")
+            .getFullList({ fields: "folder", filter: "folder != ''", requestKey: null })
+            .then((list) => (data.folders = [...new Set(list.map((x) => x.folder))].sort((a, b) => a.localeCompare(b))))
+            .catch(() => {});
         if (isNew) {
             data.initSerialized = data.serialized;
             return;
@@ -113,6 +130,9 @@ export function pageTemplateEditor(route) {
                 text: tpl.text,
                 sample_collection: tpl.sample_collection,
                 marketing: !!tpl.marketing,
+                folder: tpl.folder || "",
+                account_email: tpl.account_email || "",
+                account_collection: tpl.account_collection || "",
             });
             if (tpl.sample_data) {
                 data.sampleDataText = JSON.stringify(tpl.sample_data, null, 2);
@@ -309,7 +329,7 @@ export function pageTemplateEditor(route) {
                         // called with the word being typed
                         autocomplete: (word) => {
                             const w = (word || "").toLowerCase();
-                            return [...data.variables.map((v) => `.record.${v}`), ...globalVariables]
+                            return [...data.variables.map((v) => `.record.${v}`), ...(account()?.variables || []), ...globalVariables]
                                 .filter((v) => v.toLowerCase().includes(w));
                         },
                     }),
@@ -329,8 +349,73 @@ export function pageTemplateEditor(route) {
                         }),
                     ),
                 ),
+                () =>
+                    data.form.account_email
+                        ? t.div(
+                              { rid: "account", className: "gp-panel m-b-sm" },
+                              t.div(
+                                  { className: "txt-bold m-b-5" },
+                                  t.i({ className: "ri-user-settings-line", ariaHidden: true }),
+                                  " Account email: ",
+                                  () => account()?.label || data.form.account_email,
+                              ),
+                              t.div(
+                                  { className: "field-help m-b-sm" },
+                                  "PocketBase sends this email itself; this template replaces its own (if it fails, PocketBase's is sent). ",
+                                  () => (account()?.variables || []).includes(".link")
+                                      ? ["Put ", t.code(null, "{{.link}}"), " in a button: it opens the confirmation page."]
+                                      : "",
+                              ),
+                              field(
+                                  { label: "Used for the accounts of", name: "account_collection" },
+                                  select({
+                                      id: "account_collection",
+                                      required: true,
+                                      options: () => [
+                                          { value: "", label: "All auth collections (but the superusers)" },
+                                          { value: "*", label: "All auth collections, superusers included" },
+                                          ...data.authCollections.map((c) => ({ value: c, label: c })),
+                                      ],
+                                      value: () => data.form.account_collection,
+                                      onchange: (v) => (data.form.account_collection = v),
+                                  }),
+                              ),
+                          )
+                        : null,
                 t.div(
-                    { className: "gp-panel m-b-sm" },
+                    { className: "gp-panel m-b-sm", hidden: () => !!data.form.account_email },
+                    field(
+                        { label: "Folder", name: "folder", hint: "Groups the templates in the list. A new name creates the folder." },
+                        t.input({
+                            type: "text",
+                            id: "folder",
+                            maxLength: 100,
+                            placeholder: "No folder",
+                            value: () => data.form.folder,
+                            oninput: (e) => (data.form.folder = e.target.value),
+                        }),
+                    ),
+                    () =>
+                        data.folders.length
+                            ? t.div(
+                                  { className: "flex flex-wrap gap-5 m-b-sm" },
+                                  data.folders.map((f) =>
+                                      t.button(
+                                          {
+                                              type: "button",
+                                              rid: "f" + f,
+                                              className: () => `label gp-folder-chip ${data.form.folder == f ? "active" : ""}`,
+                                              onclick: () => (data.form.folder = data.form.folder == f ? "" : f),
+                                          },
+                                          t.i({ className: "ri-folder-line", ariaHidden: true }),
+                                          " " + f,
+                                      )
+                                  ),
+                              )
+                            : null,
+                ),
+                t.div(
+                    { className: "gp-panel m-b-sm", hidden: () => !!data.form.account_email },
                     switchInput(data.form, "marketing", "Marketing email"),
                     t.div(
                         { className: "field-help" },
@@ -386,8 +471,9 @@ export function pageTemplateEditor(route) {
                     t.div(
                         { className: "flex flex-wrap gap-5" },
                         () => data.variables.map((v) => chip(`.record.${v}`, `{{.record.${v}}}`)),
+                        () => (account()?.variables || []).map((v) => chip(v, `{{${v}}}`)),
                         globalVariables.map((v) => chip(v, `{{${v}}}`)),
-                        chip("range .records", "{{range .records}}\n  {{.id}}\n{{end}}"),
+                        () => (data.form.account_email ? null : chip("range .records", "{{range .records}}\n  {{.id}}\n{{end}}")),
                         t.button(
                             {
                                 type: "button",

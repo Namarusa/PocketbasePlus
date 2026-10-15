@@ -3098,3 +3098,57 @@ html:has(.gp-form-embed) {
         overflow-wrap: anywhere;
     }
 }
+
+/* email templates: folders and account emails */
+.gp-templates-search {
+    max-width: 320px;
+}
+.gp-templates-table .gp-folder-row td {
+    background: var(--surfaceAlt1Color);
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+.gp-folder-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.gp-folder-toggle:focus-visible {
+    outline: 2px solid var(--primaryColor);
+    outline-offset: 2px;
+}
+.gp-folder-edit {
+    opacity: 0;
+}
+.gp-folder-row:hover .gp-folder-edit,
+.gp-folder-edit:focus-visible {
+    opacity: 1;
+}
+.gp-templates-table .gp-sub-row td:first-child {
+    padding-left: 24px;
+}
+.gp-folder-chip {
+    cursor: pointer;
+    border: 0;
+}
+.gp-folder-chip:hover,
+.gp-folder-chip.active {
+    background: var(--surfaceAlt4Color);
+}
+.gp-templates-table .gp-ellipsis {
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+@media (hover: none) {
+    .gp-folder-edit {
+        opacity: 1;
+    }
+}

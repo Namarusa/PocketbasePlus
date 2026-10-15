@@ -528,6 +528,9 @@ func stepSendEmail(r *run, s Step) (any, any, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("email template %q not found", tplId)
 	}
+	if mail.IsAccountTemplate(tpl) {
+		return nil, nil, mail.ErrAccountTemplate
+	}
 	to, err := resolveString(s.Config["to"], r.data)
 	if err != nil {
 		return nil, nil, err
