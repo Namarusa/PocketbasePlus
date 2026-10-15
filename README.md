@@ -78,6 +78,9 @@ Back up `pb_data` first (Settings → Backups, or a copy of the folder while the
 - **0.3.0**: the API keys of the AI providers and the secrets of the APIs move to [Settings → Secrets](#secrets)
   (named `AI_…` and `API_…`), and the fields keep a `{{secret.NAME}}` reference. Set `POCKETBASEPLUS_ENCRYPTION_KEY`
   to store them encrypted.
+- **0.4.0**: pages get the Collection page and Error page types. Existing pages are unchanged; a page made without
+  the site theme shows a "Use the site theme" button in its settings. Missing addresses and denied pages now show a
+  page in the site theme (or your own error page).
 
 ## Docker
 
