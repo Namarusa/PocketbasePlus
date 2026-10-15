@@ -10,8 +10,8 @@
 # the initial value, also used when it's left empty. More in the README, "Docker".
 services:
   pocketbaseplus:
-    # the released image (0.4.x updates on Redeploy); "latest" follows every release
-    image: ghcr.io/namarusa/pocketbaseplus:${POCKETBASEPLUS_VERSION:-0.4}
+    # the released image (0.5.x updates on Redeploy); "latest" follows every release
+    image: ghcr.io/namarusa/pocketbaseplus:${POCKETBASEPLUS_VERSION:-0.5}
     environment:
       # Coolify generates a domain routed to the container's port 8090; change it in
       # Domains (https://app.example.com:8090: the suffix is the container port,

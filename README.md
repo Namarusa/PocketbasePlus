@@ -81,12 +81,14 @@ Back up `pb_data` first (Settings → Backups, or a copy of the folder while the
 - **0.4.0**: pages get the Collection page and Error page types. Existing pages are unchanged; a page made without
   the site theme shows a "Use the site theme" button in its settings. Missing addresses and denied pages now show a
   page in the site theme (or your own error page).
+- **0.5.0**: email templates get folders, and the account emails (verification, password reset...) can be designed in
+  Emails → Templates. Nothing changes until you design one. On Coolify, set `POCKETBASEPLUS_VERSION` to `0.5`.
 
 ## Docker
 
 One image, `ghcr.io/namarusa/pocketbaseplus`, for **linux/amd64**, **linux/arm64** and **linux/arm/v7**: Docker picks the
 right one on Linux servers, Docker Desktop (Windows, macOS Intel and Apple Silicon), Synology, QNAP, Unraid, TrueNAS
-SCALE, ZimaOS / CasaOS, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, the version (`0.4.0`) and its minor line (`0.4`).
+SCALE, ZimaOS / CasaOS, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, the version (`0.5.0`) and its minor line (`0.5`).
 
 ```sh
 docker run -d --name pocketbaseplus -p 8090:8090 \
@@ -118,7 +120,7 @@ the sources).
   `ENCRYPTION_KEY` (keep it safe), and Deploy. Coolify generates a domain; to use yours, change it in
   Domains with the container port (`https://app.example.com:8090`, visitors use `https://app.example.com`). The
   image's health check shows the app as *healthy*. Then set Settings → Application → *Application URL* to the domain and
-  *User IP proxy headers* to `X-Forwarded-For`. Redeploy pulls the latest `0.4.x`.
+  *User IP proxy headers* to `X-Forwarded-For`. Redeploy pulls the latest `0.5.x` (the `POCKETBASEPLUS_VERSION` variable picks another line).
 - **Commands**: `docker exec pocketbaseplus pocketbaseplus --dir /pb_data superuser upsert EMAIL PASS` (or
   `pages uninstall`, `migrate`...).
 
