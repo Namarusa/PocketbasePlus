@@ -28,29 +28,30 @@ var stepHandlers map[string]stepHandler
 
 func init() {
 	stepHandlers = map[string]stepHandler{
-		"condition":     stepCondition,
-		"loop":          stepLoop,
-		"get_records":   stepGetRecords,
-		"create_record": stepCreateRecord,
-		"update_record": stepUpdateRecord,
-		"delete_record": stepDeleteRecord,
-		"set_trigger":   stepSetTrigger,
-		"send_email":    stepSendEmail,
-		"http_request":  stepHTTPRequest,
-		"api_call":      stepAPICall,
-		"delay":         stepDelay,
-		"set_variables": stepSetVariables,
-		"script":        stepScript,
-		"log":           stepLog,
-		"run_flow":      stepRunFlow,
-		"stop":          stepStop,
-		"notify":        stepNotify,
-		"ai_decision":   stepAIDecision,
-		"ai_generate":   stepAIGenerate,
-		"sign_in":       stepSignIn,
-		"sign_out":      stepSignOut,
-		"redirect":      stepRedirect,
-		"respond":       stepRespond,
+		"condition":         stepCondition,
+		"loop":              stepLoop,
+		"get_records":       stepGetRecords,
+		"create_record":     stepCreateRecord,
+		"update_record":     stepUpdateRecord,
+		"delete_record":     stepDeleteRecord,
+		"set_trigger":       stepSetTrigger,
+		"send_email":        stepSendEmail,
+		"http_request":      stepHTTPRequest,
+		"api_call":          stepAPICall,
+		"delay":             stepDelay,
+		"set_variables":     stepSetVariables,
+		"script":            stepScript,
+		"log":               stepLog,
+		"run_flow":          stepRunFlow,
+		"stop":              stepStop,
+		"notify":            stepNotify,
+		"ai_decision":       stepAIDecision,
+		"ai_generate":       stepAIGenerate,
+		"sign_in":           stepSignIn,
+		"sign_out":          stepSignOut,
+		"redirect":          stepRedirect,
+		"respond":           stepRespond,
+		"generate_document": stepGenerateDocument,
 	}
 }
 
@@ -399,6 +400,9 @@ func stepCreateRecord(r *run, s Step) (any, any, error) {
 	if err := checkDates(col, fields); err != nil {
 		return fields, nil, err
 	}
+	if err := documentFiles(r.app, col, fields); err != nil {
+		return fields, nil, err
+	}
 	rec := core.NewRecord(col)
 	rec.Load(fields)
 	if pass, ok := fields["password"].(string); ok && col.IsAuth() {
@@ -449,6 +453,9 @@ func stepUpdateRecord(r *run, s Step) (any, any, error) {
 	}
 	input := map[string]any{"collection": col.Name, "recordId": id, "data": fields}
 	if err := checkDates(col, fields); err != nil {
+		return input, nil, err
+	}
+	if err := documentFiles(r.app, col, fields); err != nil {
 		return input, nil, err
 	}
 	rec, err := r.app.FindRecordById(col, id)
@@ -558,6 +565,15 @@ func stepSendEmail(r *run, s Step) (any, any, error) {
 		setPath(data, path, v)
 	}
 
+	attachV, err := resolveValue(s.Config["attachments"], r.data)
+	if err != nil {
+		return nil, nil, fmt.Errorf("attachments: %w", err)
+	}
+	attachments, err := documentAttachments(attachV)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	var sendAt time.Time
 	if delay := asInt(s.Config, "delayMinutes", 0); delay > 0 {
 		sendAt = time.Now().Add(time.Duration(delay) * time.Minute)
@@ -566,7 +582,7 @@ func stepSendEmail(r *run, s Step) (any, any, error) {
 	source := "Flow: " + r.flow.GetString("name")
 	ids := []string{}
 	for _, addr := range recipients {
-		msg, err := mail.EnqueueData(r.app, tpl, addr, data, sendAt, source)
+		msg, err := mail.EnqueueDataWith(r.app, tpl, addr, data, sendAt, source, attachments)
 		if err != nil {
 			return data, nil, err
 		}
@@ -578,7 +594,7 @@ func stepSendEmail(r *run, s Step) (any, any, error) {
 	if r.engine.mail != nil {
 		r.engine.mail.Kick()
 	}
-	return map[string]any{"template": tpl.GetString("name"), "to": recipients, "variables": data},
+	return map[string]any{"template": tpl.GetString("name"), "to": recipients, "variables": data, "attachments": attachments},
 		map[string]any{"queued": len(ids), "messageIds": ids, "to": recipients}, nil
 }
 

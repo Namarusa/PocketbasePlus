@@ -35,7 +35,7 @@ internal tool (in the spirit of Directus, Budibase or Appsmith) and keep PocketB
 - **PocketBase's own building blocks**: the roles compile into native API rules, the page visitors sign in with
   PocketBase auth, the settings and data are regular collections, and the REST API, SDKs and realtime keep working
   for your other apps.
-- **Removable modules**: the most experimental features (Pages, saved APIs) are self-contained packages, removed by
+- **Removable modules**: the most experimental features (Pages, saved APIs, Documents) are self-contained packages, removed by
   deleting one line of `main.go` (see [Removing the Pages module](#removing-the-pages-module)).
 
 PocketBasePlus is an independent project, not affiliated with or endorsed by PocketBase. PocketBase is still in active
@@ -190,6 +190,9 @@ internal/session/     visitors signed in on the pages (HttpOnly cookie), flash m
 internal/pages/       optional Pages module, self-contained: its migration, page routes, server rendering, and its own
                       dashboard extension "pocketbaseplus-pages" (ext/, with GrapesJS 0.23.6 BSD-3, Basecoat UI 1.0.2 MIT,
                       Geist 1.7.2 fonts OFL, Lucide 1.48.0 icons ISC: licences in ext/vendor/)
+internal/pdfview/     PDF.js 4.10.38 (Apache-2.0, with its character maps and standard fonts: licences next to them),
+                      shared by the PDF viewers of the pages and the Documents editor, and the signed links of the
+                      documents shown in the pages
 internal/offline/     offline deployment settings (POCKETBASEPLUS_OFFLINE, POCKETBASEPLUS_MAP_TILES)
 internal/deploy/      container settings from the environment (listen address, encryption key, first superuser) and the health command
 internal/formula/     the functions of the templates, flows and page formulas, with their catalog (/api/gp/functions)
@@ -321,8 +324,8 @@ argument selected, and a value picked next replaces it.
       `trigger.user`; the record steps check *their* API rules, and a visitor can call 60 times a minute.
 
     With *Wait for the result*, the caller gets the response of a **Respond** step (status, headers, and JSON, text,
-    HTML or a redirect; HTML values are escaped and the page can't run scripts), else the last step output as
-    JSON.
+    HTML, a [document](#documents) or a redirect; HTML values are escaped and the page can't run scripts), else the
+    last step output as JSON.
   - **Schedule**: cron (UTC).
   - **Another flow**: called by a "Run another flow" step.
   - **Page action**: a button or form of the [pages](#members-sign-in-and-page-actions) (`POST /api/flows/action/{id}`,
@@ -379,14 +382,17 @@ of Budibase or the API calls of FlutterFlow:
 - **An API** has a base address (`https://api.example.com/v1`), a sign-in (*Bearer token*, *Basic auth*, *API key in a
   header* or *in the query string*), shared headers and a timeout. The secret is entered once and stays on the
   server (or picked from the [Secrets](#secrets)).
-- **Variables** are written `{{name}}` (or `{{.vars.name}}`, needed only when the name is also a function, like
-  `title`): type `{{customer_id}}` in a field and the variable is added to the list (a variable of the path is
-  required); the ones no field uses are struck out. Each has a **default value**, used by *Test the call* and when the
-  flow gives none.
+- **Variables** are written `{{name}}` (`{{.vars.name}}` only when the name is also a function, like `title`; the
+  menu writes it for you). Every field of a call or an API has a **variable menu**: its `{ }` button, or `{{` typed
+  in the field, lists the call's variables, its API's and the secrets (filtered as you type; ↑↓ Enter, Esc) and
+  inserts the one picked where the caret is. A name that doesn't exist yet offers **New variable**; typing
+  `{{customer_id}}` in full adds it too (a variable of the path is required). The ones no field uses are struck out.
+  Each has a **default value**, used by *Test the call* and when the flow gives none.
 - **Variables of an API** are shared by its calls (like the API groups of FlutterFlow) and can be used anywhere in
   its base address (`https://{{host}}/{{version}}`), shared headers and sign-in (username, key name, secret:
   `{{token}}` for a token that a flow gets at run time). The values of the variables used by the sign-in are hidden in
-  the run logs. A call can't declare a variable with the name of one of its API's.
+  the run logs. A call lists them under its own (default value, used or not by the call, a link to the API
+  settings) and can't declare a variable with the name of one of its API's.
 - **A call** adds a method and a path (`customers/{{id}}`, or a full address when the API has none), query
   parameters, headers and a body (JSON, form, XML or text) that use its variables and those of its API (a query
   parameter whose variable is empty is left out). It chooses the response format, the retries, and its **outputs**:
@@ -418,6 +424,59 @@ of Budibase or the API calls of FlutterFlow:
 To remove the module: back up `pb_data`, run `./pocketbaseplus apis uninstall --yes` (deletes the APIs and their calls),
 remove `apisources.Register(app)` from `main.go` and delete `internal/apisources/`. Flows with API call steps then
 fail with "the APIs module isn't installed".
+
+## Documents
+
+**Documents** (a menu of the dashboard; optional module, `internal/documents`) makes PDF documents (invoices, quotes,
+certificates, tickets…) from templates, inside the app: the PDF is drawn in Go
+([go-pdf/fpdf](https://github.com/go-pdf/fpdf), MIT) with the embedded Noto Sans fonts (OFL), so it works offline, in
+the Docker image and on every platform, with no browser or service next to it.
+
+- **A template** is a list of blocks in three parts: a **header** and a **footer** drawn on every page
+  (`{{page}}` / `{{pages}}` give "Page 2 / 5"), and the **body**. The blocks:
+  - **Heading** and **Text**: `**bold**`, `*italic*`, `[a link](https://…)`, line breaks; alignment, size, color.
+  - **Fields**: label / value rows ("Invoice no.", "Date").
+  - **Columns**: 2 to 4 columns of blocks side by side (the addresses of an invoice).
+  - **Table**: one row per item of a list (`{{lists.items}}`, a list field, or `{{values.lines}}` given by the
+    flow), columns with a header, a value (`{{row.name}}`, `{{index}}`), a width and an alignment; striped rows,
+    totals under it. A long table continues on the next pages with its header repeated.
+  - **Image**: a file uploaded with the template (logo, signature), the file field of the record, or an
+    **address** (a formula: `{{record.image}}/high.webp`, `https://cdn.example.com/{{record.sku}}.png`, or a file of
+    the app, `/api/files/…`); PNG, JPEG, GIF or WebP. Addresses are downloaded by the server with the checks of the
+    flows' HTTP requests: private and local addresses are refused unless `POCKETBASEPLUS_FLOWS_ALLOW_PRIVATE_HTTP=1`.
+  - **Divider**, **Space**, **Page break**.
+  - Every block can be **shown only when** a formula gives something (`{{record.paid}}`, `{{gt record.discount 0}}`).
+- **Formulas**: every text uses the [functions](#functions) of the pages and emails:
+  `{{currency "EUR" record.total}}`, `{{formatDate "DD/MM/YYYY" record.created}}`. The data:
+  - `record`: the record the document is about (its collection is chosen in *Data*), its relations followed
+    (`{{record.customer.email}}`; a record alone prints its name: `{{record.customer}}`);
+  - `lists.<name>`: lists of records defined in *Data*, e.g. `items` = the `order_items` where
+    `order = {{record.id}}` (record values are given to the filter as safe parameters), with a sort and a limit;
+  - `values.<name>`: values given by the flow step; `app.name`, `app.url`, `document.name`.
+  The secrets can't be used (a document could show them).
+- **Page**: A4, A5, A3, Letter, Legal or a custom size, portrait or landscape, margins, text size, accent color
+  (titles, table headers, links), and the **file name** (a formula: `invoice-{{record.number}}`).
+- **The editor**: the pages of the document, made by the server and drawn large in the editor (zoom, fit to the
+  width), with the record chosen above them. **Click a block on the page** to edit it; drag it to move it (a line
+  shows where it goes), or drag a new block from the palette onto the page or into the list of blocks (header, body,
+  footer, the columns). The side panel holds the palette and the list of blocks, the settings of the selected block
+  (a `{ }` picker lists the fields of the record and of the table rows, the lists, the values and the functions;
+  Alt+↑/↓ moves it, Esc goes back to the list), the *Page* and the *Data*. Formula errors show on their block, on
+  the page and in the list. **New template** starts from *Invoice*, *Quote*, *Certificate* or *Blank*; templates go
+  in folders.
+- **Generate**: from the editor (for the preview record), or with the **Generate document** step of the flows (a
+  template, the record, extra values, an optional file name). The documents are kept in the `documents` collection
+  (superusers only; *Documents → Generated* lists and downloads them). The step output (`{{steps.invoice}}`) is
+  taken by the other steps:
+  - **Send email** → *Attachments*: the PDF is attached to the email (read when it's sent);
+  - **Create / Update record** → a file field gets the PDF;
+  - **Respond** (webhooks) → *Document*: the caller gets the PDF, shown or downloaded.
+- **In the pages**: a [PDF viewer](#pdf-viewers) of a page can show a template drawn for the record of the page.
+- **Limits**: 200 pages, 5,000 table rows and 30 seconds per document; images up to 10 MB.
+
+To remove the module: back up `pb_data`, run `./pocketbaseplus documents uninstall --yes` (deletes the templates and
+the generated documents), remove `documents.Register(app)` from `main.go` and delete `internal/documents/`. Flows
+with Generate document steps then fail with "the Documents module isn't installed".
 
 ## Secrets
 
@@ -910,6 +969,39 @@ The **Dates** blocks are form fields like shadcn/ui's Calendar and Date Picker, 
 - Without JavaScript the browser's date fields are shown with the same names, so the forms still work. Values sent in
   the query (a search form using GET) are shown again.
 
+### PDF viewers
+
+The **PDF viewer** block (and **Field PDF**, **Document (PDF)** in *Data*) shows a PDF in the page, drawn by
+[PDF.js](https://github.com/mozilla/pdf.js) (embedded, loaded only when a viewer comes near the screen), with the
+look of the site's theme. The PDF is:
+
+- an **uploaded file**: *Upload a PDF* in its settings (the page's files take PDFs up to 30 MB);
+- an **address**: `https://…` or a file of the app (`/api/files/…`), a formula too (`{{record.manual_url}}`); a PDF of
+  another site needs that site to allow it (CORS), and isn't shown in the offline mode;
+- a **file field of the record** (a single item page, or an item of a list): its first PDF; protected file fields
+  can't be shown;
+- a **Documents template** drawn for the record of the page (or of a list item), when the Documents module is there.
+  The page gives the visitor a signed link to the document of that record only, valid 6 hours; the PDF is made on
+  demand (not stored) with all the data of the template, whatever the visitor's API rules.
+
+Its settings choose how it looks and what the visitor can do:
+
+- **Toolbar** at the top, at the bottom, or none; its **buttons** one by one: page numbers (previous / next, the
+  page typed), zoom (− / list / +), search (results highlighted, Enter / Shift+Enter, Ctrl+F in the viewer),
+  download (under the *Download name*, or the file's own), print (the pages only), full screen (the whole screen on
+  phones without it).
+- **Page thumbnails**: none, hidden behind a button, or shown (over the pages on narrow screens).
+- **Pages**: all of them scrolling, or **one at a time** (arrows on the sides, swipe, ← / →); the **first page**.
+- **Zoom**: fit the width (follows the size of the viewer), fit the page, or 50 to 200%.
+- **Height**: 640 px by default, any height, or `auto`: as tall as all its pages (the page of the site scrolls, the
+  toolbar stays at the top). The usual *Styles* (width, margins, border) apply too.
+- **Behind pages** (the theme's gray, none, dark), **page edges** (shadow, border, none), **text** selectable or not,
+  **links** of the PDF clickable or not (addresses open in a new tab, links inside the PDF go to their page), the
+  **label** read by screen readers, the text **when empty** (a record without a file).
+
+Without JavaScript the viewer is a link to the PDF. The canvas of the builder shows the real viewer, and changes as
+the settings change. Password-protected PDFs ask for their password.
+
 ### Basecoat UI kit
 
 Pages use [Basecoat UI](https://basecoatui.com) (shadcn/ui components in plain HTML/CSS), embedded in the app:
@@ -959,8 +1051,11 @@ for services on your network), and map tiles (OpenStreetMap by default).
   brand page). Hidden fields, passwords, protected files and the emails of auth records (unless public) are never
   shown. The collections' API rules don't apply, so check the filters of the lists of private data.
 - **Safety**: pages run no scripts (CSP `script-src 'none'`), except the kit's mode script (allowed by its hash) and
-  Basecoat's embedded script on the pages with tabs, menus, popovers or a sidebar; scripts, event handlers and `javascript:` links are removed from the HTML, third-party
-  embeds are sandboxed, and uploaded images are served sandboxed.
+  Basecoat's embedded script on the pages with tabs, menus, popovers or a sidebar, and the embedded scripts of the
+  charts, calendars and PDF viewers; scripts, event handlers and `javascript:` links are removed from the HTML,
+  third-party embeds are sandboxed, and uploaded images are served sandboxed. The scripts of a page read no
+  address (CSP `connect-src 'none'`), except on the pages with a PDF viewer (the app, and https sites unless
+  offline).
 
 ### Removing the Pages module
 
@@ -982,6 +1077,10 @@ PocketBasePlus is released under the [MIT license](LICENSE). It is built on:
 - Embedded in the binary, with their licenses next to them: [GrapesJS](https://github.com/GrapesJS/grapesjs)
   (BSD-3-Clause, the page builder), [Basecoat](https://github.com/hunvreus/basecoat) (MIT, the pages' UI kit),
   [Lucide](https://github.com/lucide-icons/lucide) (ISC, icons), [Geist](https://github.com/vercel/geist-font)
-  (SIL OFL 1.1, fonts), [Apache ECharts](https://github.com/apache/echarts) (Apache-2.0, charts) and
+  (SIL OFL 1.1, fonts), [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) (SIL OFL 1.1, the fonts of
+  the documents), [PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0, the PDF viewers of the pages and the document editor;
+  with Adobe's character maps, BSD-3-Clause, and the Foxit and Liberation fonts, BSD-3-Clause and SIL OFL 1.1),
+  [Apache ECharts](https://github.com/apache/echarts) (Apache-2.0, charts) and
   [Leaflet](https://github.com/Leaflet/Leaflet) (BSD-2-Clause, maps).
-- Go modules listed in `go.mod` (among them goja, excelize, cobra and the Anthropic Go SDK), each under its own license.
+- Go modules listed in `go.mod` (among them goja, excelize, go-pdf/fpdf, cobra and the Anthropic Go SDK), each under its
+  own license.

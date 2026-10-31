@@ -47,7 +47,7 @@ type callerState struct {
 type respondState struct {
 	set      bool
 	status   int
-	format   string // json | text | html
+	format   string // json | text | html | document
 	body     any
 	headers  map[string]string
 	redirect string
@@ -64,7 +64,7 @@ const (
 var (
 	slugRegex      = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 	webhookCalls   = newIPLimiter(maxWebhookCalls, webhookCallWindow)
-	respondFormats = map[string]string{"json": "application/json", "text": "text/plain; charset=utf-8", "html": "text/html; charset=utf-8"}
+	respondFormats = map[string]string{"json": "application/json", "text": "text/plain; charset=utf-8", "html": "text/html; charset=utf-8", "document": "application/pdf"}
 	// headers the Respond step can't set (the server's, the cookies of the site)
 	blockedHeaders = map[string]bool{
 		"set-cookie": true, "content-length": true, "transfer-encoding": true, "connection": true,
@@ -228,6 +228,15 @@ func writeResponse(re *core.RequestEvent, resp *respondState) error {
 		re.Response.WriteHeader(resp.status)
 		_, err := io.WriteString(re.Response, toString(resp.body))
 		return err
+	case "document":
+		doc, _ := resp.body.(documentBody)
+		disposition := "inline"
+		if doc.download {
+			disposition = "attachment"
+		}
+		h.Set("Content-Disposition", disposition+`; filename="`+strings.ReplaceAll(doc.filename, `"`, "")+`"`)
+		h.Set("X-Content-Type-Options", "nosniff")
+		return re.Blob(resp.status, respondFormats["document"], doc.pdf)
 	}
 	if resp.status == http.StatusNoContent {
 		return re.NoContent(resp.status)
@@ -279,6 +288,24 @@ func stepRespond(r *run, s Step) (any, any, error) {
 		if resp.status < 300 || resp.status > 308 {
 			resp.status = http.StatusSeeOther
 		}
+	} else if format == "document" {
+		// the PDF of a Generate document step
+		v, err := resolveValue(s.Config["body"], r.data)
+		if err != nil {
+			return cfg, nil, fmt.Errorf("document: %w", err)
+		}
+		id := DocumentID(v)
+		if id == "" {
+			return cfg, nil, errors.New("document: give the output of a Generate document step, e.g. {{steps.invoice}}")
+		}
+		if documents == nil {
+			return cfg, nil, errNoDocuments
+		}
+		pdf, name, err := documents.Bytes(r.app, id)
+		if err != nil {
+			return cfg, nil, err
+		}
+		resp.body = documentBody{pdf: pdf, filename: name, download: asBool(s.Config, "download")}
 	} else if format == "json" {
 		// the body: a value of the run, or JSON text
 		v, err := resolveValue(s.Config["body"], r.data)
@@ -383,4 +410,11 @@ func validateRespondSteps(steps []Step, webhook bool) error {
 		}
 	}
 	return nil
+}
+
+// documentBody is the PDF answered by a Respond step (format "document").
+type documentBody struct {
+	pdf      []byte
+	filename string
+	download bool
 }

@@ -268,12 +268,17 @@ var staticFiles = func() map[string]staticFile {
 	}
 	files[uiJS] = staticFile{"ext/ui/gp-ui.js", "text/javascript; charset=utf-8", false}
 	files[uiCSS] = staticFile{"ext/ui/gp-ui.css", "text/css; charset=utf-8", false}
+	files[pdfJS] = staticFile{"ext/ui/gp-pdf.js", "text/javascript; charset=utf-8", false}
+	files[pdfCSS] = staticFile{"ext/ui/gp-pdf.css", "text/css; charset=utf-8", false}
 	return files
 }()
 
 // uiJS and uiCSS are the pages script and styles of the charts and calendars
 // (named by their content: cached for a year, new names after an upgrade).
 var uiJS, uiCSS = versioned("ext/ui/gp-ui.js", "gp-ui-%s.js"), versioned("ext/ui/gp-ui.css", "gp-ui-%s.css")
+
+// pdfJS and pdfCSS are the script and styles of the PDF viewers.
+var pdfJS, pdfCSS = versioned("ext/ui/gp-pdf.js", "gp-pdf-%s.js"), versioned("ext/ui/gp-pdf.css", "gp-pdf-%s.css")
 
 func versioned(path, pattern string) string {
 	data, _ := extFS.ReadFile(path)

@@ -282,7 +282,7 @@ func denied(e *core.RequestEvent, page *core.Record, v visitor) error {
 
 func deniedPage(e *core.RequestEvent, status int, title, text, extra string) error {
 	h := e.Response.Header()
-	h.Set("Content-Security-Policy", pageCSP(false, false))
+	h.Set("Content-Security-Policy", pageCSP(needs{}, false))
 	h.Set("Cache-Control", "private, no-cache")
 	h.Set("Vary", "Cookie")
 	return e.HTML(status, `<!doctype html><html lang="en"><head><meta charset="utf-8">`+

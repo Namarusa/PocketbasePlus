@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,6 +37,7 @@ import (
 	"github.com/Namarusa/PocketbasePlus/internal/internalcols"
 	"github.com/Namarusa/PocketbasePlus/internal/labels"
 	"github.com/Namarusa/PocketbasePlus/internal/offline"
+	"github.com/Namarusa/PocketbasePlus/internal/pdfview"
 	"github.com/Namarusa/PocketbasePlus/internal/session"
 )
 
@@ -109,6 +111,10 @@ func Bind(app core.App) {
 		se.Router.GET("/p/{slug}/{id}", serveLegacy)
 		se.Router.GET("/p/_assets/{page}/{file}", serveAsset)
 		se.Router.GET("/p/_static/{file}", serveStatic)
+		// PDF.js, for the PDF viewers (with its fonts and character maps)
+		se.Router.GET("/p/_pdfjs/{version}/{path...}", func(e *core.RequestEvent) error {
+			return pdfview.Serve(e, e.Request.PathValue("version"), e.Request.PathValue("path"))
+		})
 		se.Router.GET("/p/_theme.css", serveTheme)
 		se.Router.POST("/api/pages/{id}/preview", previewLink).Bind(apis.RequireSuperuserAuth())
 		se.Router.POST("/api/pages/{id}/duplicate", duplicatePage).Bind(apis.RequireSuperuserAuth())
@@ -236,13 +242,18 @@ func singleHome(e *core.RecordEvent) error {
 // embedded Basecoat script for pages with interactive components and the mode
 // script of the pages with the kit (scripts in the page HTML are always removed). Styles, images, fonts and embeds may come
 // from https sites (web fonts, remote images), unless the offline mode is on.
-func pageCSP(script, kit bool) string {
+func pageCSP(n needs, kit bool) string {
 	remote := " https:"
 	if offline.Enabled() {
 		remote = ""
 	}
+	// the PDF viewers read their file (of the app, or of an https site)
+	connect := "'none'"
+	if n.fetch {
+		connect = "'self'" + remote
+	}
 	var scripts []string
-	if script {
+	if n.script {
 		scripts = append(scripts, "'self'")
 	}
 	if kit {
@@ -253,7 +264,7 @@ func pageCSP(script, kit bool) string {
 	}
 	return "default-src 'self'; script-src " + strings.Join(scripts, " ") + "; style-src 'self' 'unsafe-inline'" + remote + "; " +
 		"img-src 'self' data: blob:" + remote + "; font-src 'self' data:" + remote + "; media-src 'self'" + remote + "; " +
-		"frame-src 'self'" + remote + "; connect-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'self'"
+		"frame-src 'self'" + remote + "; connect-src " + connect + "; form-action 'self'; base-uri 'none'; frame-ancestors 'self'"
 }
 
 func serveHome(e *core.RequestEvent) error {
@@ -421,13 +432,13 @@ func respond(e *core.RequestEvent, page, record *core.Record, preview bool, v vi
 		code, _ := strconv.Atoi(page.GetString("error_code"))
 		view.Error = errorInfo(e.App, code, "/an/address")
 	}
-	out, script, err := render(e.Request.Context(), e.App, view, e.Request.URL.Query(), preview)
+	out, need, err := render(e.Request.Context(), e.App, view, e.Request.URL.Query(), preview)
 	if err != nil {
 		e.App.Logger().Error("Page rendering failed", "page", page.GetString("slug"), "error", err)
 		return errorPage(e, http.StatusInternalServerError)
 	}
 	h := e.Response.Header()
-	h.Set("Content-Security-Policy", pageCSP(script, view.Kit != nil))
+	h.Set("Content-Security-Policy", pageCSP(need, view.Kit != nil))
 	h.Set("Cache-Control", "private, no-cache") // the page may show the visitor
 	h.Set("Vary", "Cookie")
 	h.Set("X-Content-Type-Options", "nosniff")
@@ -452,7 +463,12 @@ func serveAsset(e *core.RequestEvent) error {
 	}
 	defer fsys.Close()
 	h := e.Response.Header()
-	h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox")
+	if strings.EqualFold(path.Ext(name), ".pdf") {
+		// a sandboxed PDF isn't shown by the browsers (the link of the viewers without script)
+		h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'")
+	} else {
+		h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox")
+	}
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "max-age=2592000")
 	return fsys.Serve(e.Response, e.Request, rec.BaseFilesPath()+"/"+name, name)
@@ -610,7 +626,7 @@ func command(app *pocketbase.PocketBase) *cobra.Command {
 					}
 				}
 				// forget the migrations (re-adding the module creates the collections again)
-				_, err := tx.DB().Delete("_migrations", dbx.In("file", migrationFile, kitMigrationFile, modeMigrationFile, versionsMigrationFile, accessMigrationFile, rulesMigrationFile, chartsMigrationFile, typesMigrationFile, errorsMigrationFile)).Execute()
+				_, err := tx.DB().Delete("_migrations", dbx.In("file", migrationFile, kitMigrationFile, modeMigrationFile, versionsMigrationFile, accessMigrationFile, rulesMigrationFile, chartsMigrationFile, typesMigrationFile, errorsMigrationFile, pdfMigrationFile)).Execute()
 				return err
 			})
 			if err != nil {

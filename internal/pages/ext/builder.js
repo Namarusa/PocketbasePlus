@@ -8,6 +8,7 @@ import { loadPages, pagePath, pageURL, shared, slugify, typeLabel } from "./page
 import { applyPartsCSS, definePartType, loadParts, partOf, refreshPartTrait, saveAsPartModal, setPartBlocks, unlinkPart } from "./parts.js";
 import { addBlockSearch } from "./blocksearch.js";
 import { defineWidgetTypes, refreshChartTraits, refreshWidgets, setWidgetBlocks } from "./widgets.js";
+import { definePDFType, refreshPDFTraits, setPDFBlocks } from "./pdfviewer.js";
 import { addColumnsTrait, defineColumnsTrait } from "./tablecols.js";
 import { clearDraft, historyModal, offerDraft, storeDraft } from "./history.js";
 import { applyConditions, defineConditions } from "./conditions.js";
@@ -42,6 +43,7 @@ function loadGrapes() {
 
 const defaultCSS = "body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#222;line-height:1.5}";
 const assetURL = (pageId, name) => `/p/_assets/${pageId}/${encodeURIComponent(name)}`;
+const isPDF = (name) => /\.pdf$/i.test(name || "");
 const placeholderImage = "data:image/svg+xml," + encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><rect width="320" height="180" fill="#e9ecef"/><path d="M130 115l20-25 15 18 10-12 20 19z" fill="#adb5bd"/><circle cx="140" cy="72" r="9" fill="#adb5bd"/></svg>`,
 );
@@ -484,6 +486,36 @@ export function pageBuilder(route) {
         const collectionOptions = () => [{ id: "", label: "- Select a collection -" }, ...collections.map((c) => ({ id: c.name, label: c.name }))];
     // charts and calendars (widgets.js)
     const widgetCtx = { pageId: id, byName: (name) => byName(name), collectionOptions: () => collectionOptions(), viewAs: () => data.viewAs };
+    // the PDF viewers (pdfviewer.js)
+    let documentTemplates = null;
+    const pdfCtx = {
+        ...widgetCtx,
+        collection: (comp) => contextCollection(comp),
+        pdfAssets: () => (data.page?.assets || []).filter(isPDF),
+        uploadPDF: (files) => uploadAssets(files),
+        assetURL: (name) => assetURL(id, name),
+        // the templates of the Documents module (none without it)
+        documentTemplates: () =>
+            (documentTemplates ||= app.pb
+                .collection("document_templates")
+                .getFullList({ fields: "id,name,slug,collection", sort: "name", requestKey: null })
+                .catch(() => [])),
+    };
+
+    /** Uploads files to the page; returns the names of the new ones. */
+    async function uploadAssets(files) {
+        const before = new Set(data.page.assets || []);
+        const form = new FormData();
+        files.forEach((f) => form.append("assets+", f));
+        try {
+            const rec = await app.pb.collection("pages").update(id, form, { fields: "assets" });
+            data.page.assets = rec.assets;
+            return rec.assets.filter((n) => !before.has(n));
+        } catch (err) {
+            handleError(err);
+            return [];
+        }
+    }
     // formulas (formula.js)
     const formulaCtx = {
         pageId: id,
@@ -998,6 +1030,7 @@ export function pageBuilder(route) {
                     defineTypes(ed);
                     defineMemberTypes(ed);
                     defineWidgetTypes(ed, widgetCtx);
+                    definePDFType(ed, pdfCtx);
                     defineFormula(ed, formulaCtx);
                     defineConditions(ed, formulaCtx);
                     defineRecordsTraits(ed, recordsCtx);
@@ -1021,7 +1054,7 @@ export function pageBuilder(route) {
             // saved project, or the starter HTML of a new page
             ...(project ? { projectData: project } : { components: page.html || "", style: page.css || (page.kit ? "" : defaultCSS) }),
             selectorManager: { componentFirst: true },
-            canvas: { styles: [base + "canvas.css", base + "ui/gp-ui.css"], scripts: [base + "ui/gp-ui.js"] },
+            canvas: { styles: [base + "canvas.css", base + "ui/gp-ui.css", base + "ui/gp-pdf.css"], scripts: [base + "ui/gp-ui.js", base + "ui/gp-pdf.js"] },
             deviceManager: {
                 devices: [
                     { id: "desktop", name: "Desktop", width: "" },
@@ -1030,22 +1063,15 @@ export function pageBuilder(route) {
                 ],
             },
             assetManager: {
-                assets: (page.assets || []).map((n) => assetURL(page.id, n)),
+                // the images (the PDFs go in the PDF viewers)
+                assets: (page.assets || []).filter((n) => !isPDF(n)).map((n) => assetURL(page.id, n)),
                 uploadFile: async (e) => {
                     const files = [...(e.dataTransfer?.files || e.target?.files || [])];
                     if (!files.length) {
                         return;
                     }
-                    const before = new Set(data.page.assets || []);
-                    const form = new FormData();
-                    files.forEach((f) => form.append("assets+", f));
-                    try {
-                        const rec = await app.pb.collection("pages").update(id, form, { fields: "assets" });
-                        data.page.assets = rec.assets;
-                        ed.AssetManager.add(rec.assets.filter((n) => !before.has(n)).map((n) => assetURL(id, n)));
-                    } catch (err) {
-                        handleError(err);
-                    }
+                    const added = await uploadAssets(files);
+                    ed.AssetManager.add(added.filter((n) => !isPDF(n)).map((n) => assetURL(id, n)));
                 },
             },
             panels: {
@@ -1088,6 +1114,7 @@ export function pageBuilder(route) {
         setPartBlocks(ed, !page.isPart); // parts don't nest
         setMemberBlocks(ed, page.kit);
         setWidgetBlocks(ed);
+        setPDFBlocks(ed);
         addBlockSearch(ed);
         // Basecoat classes: never shown as style tags (styling a button never restyles every .btn)
         kitClasses.forEach((name) => ed.Selectors.add({ name, private: true }));
@@ -1138,6 +1165,7 @@ export function pageBuilder(route) {
             refreshTraits(comp);
             addPartTools(comp);
             refreshChartTraits(comp, widgetCtx);
+            refreshPDFTraits(comp, pdfCtx);
             addColumnsTrait(comp);
             if (comp.getTraits().length) {
                 ed.runCommand("open-tm"); // show the bindings of data elements

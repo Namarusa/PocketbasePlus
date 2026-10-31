@@ -14,7 +14,7 @@ func TestCharts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !script {
+		if !script.script {
 			t.Errorf("%s: expected the pages script", name)
 		}
 		for _, w := range want {

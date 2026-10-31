@@ -24,6 +24,7 @@ const stepTypes = {
     set_trigger: { label: "Update triggering record", icon: "ri-pencil-ruler-2-line", group: "Records", key: "trigger_update", hint: "Change the record before it is saved (before-save flows)" },
     send_email: { label: "Send email", icon: "ri-mail-send-line", group: "Actions", key: "email", hint: "Send one of your email templates" },
     api_call: { label: "API call", icon: "ri-plug-line", group: "Actions", key: "api", hint: "Run a saved call of one of your APIs (Flows → APIs)" },
+    generate_document: { label: "Generate document", icon: "ri-file-pdf-2-line", group: "Actions", key: "document", hint: "Make a PDF from a document template (Documents)" },
     http_request: { label: "HTTP request", icon: "ri-global-line", group: "Actions", key: "http", hint: "Call any address (one-off, typed in the step)" },
     notify: { label: "Send notification", icon: "ri-notification-3-line", group: "Actions", key: "notification", hint: "Notify superusers in the dashboard (bell)" },
     log: { label: "Log", icon: "ri-file-list-3-line", group: "Actions", key: "log", hint: "Write a message in the run log" },
@@ -32,7 +33,7 @@ const stepTypes = {
     sign_in: { label: "Sign in", icon: "ri-login-box-line", group: "Pages", key: "login", hint: "Check an email and password and sign the visitor in" },
     sign_out: { label: "Sign out", icon: "ri-logout-box-r-line", group: "Pages", key: "logout", hint: "Sign the visitor out" },
     redirect: { label: "Redirect to page", icon: "ri-share-forward-line", group: "Pages", key: "redirect", hint: "Open a page next, with a message" },
-    respond: { label: "Respond", icon: "ri-reply-line", group: "Webhook", key: "response", hint: "The response of the webhook: status, JSON, text, HTML or a redirect" },
+    respond: { label: "Respond", icon: "ri-reply-line", group: "Webhook", key: "response", hint: "The response of the webhook: status, JSON, text, HTML, a document or a redirect" },
     set_variables: { label: "Set variables", icon: "ri-braces-line", group: "Advanced", key: "vars", hint: "Compute values to reuse in later steps" },
     script: { label: "Run script", icon: "ri-javascript-line", group: "Advanced", key: "script", hint: "Sandboxed JavaScript returning a value" },
 };
@@ -64,6 +65,8 @@ function defaultConfig(type) {
             return { method: "POST", url: "", query: {}, headers: {}, body: "", responseFormat: "auto", retries: 0, failOnError: true, timeoutSeconds: 15 };
         case "api_call":
             return { call: "", vars: {}, failOnError: true };
+        case "generate_document":
+            return { template: "", record: "", values: {}, filename: "" };
         case "log":
             return { message: "" };
         case "notify":
@@ -204,6 +207,7 @@ export function pageFlowEditor(route) {
         collections: [],
         allCollections: [],
         templates: [],
+        docTemplates: [], // document templates (Documents module)
         otherFlows: [],
         templateVars: {}, // templateId -> [paths]
         apiCalls: [], // saved API calls (APIs module)
@@ -227,6 +231,25 @@ export function pageFlowEditor(route) {
 
     // the saved API calls (optional APIs module): variables, outputs and the
     // fields of their last test response
+    async function loadDocTemplates() {
+        if (!globalThis.gpDocuments) {
+            return;
+        }
+        try {
+            data.docTemplates = await api("/api/documents/templates", { requestKey: null });
+        } catch (err) {
+            handleError(err);
+        }
+    }
+
+    // the "Generate document" steps before a step: their documents can be
+    // attached, stored or answered ({{steps.invoice}})
+    function documentOptions(stepId) {
+        return scopeOf(stepId)
+            .prev.filter((s) => s.type == "generate_document")
+            .map((s) => ({ value: `{{steps.${s.key}}}`, label: `Document of “${s.name || s.key}”` }));
+    }
+
     async function loadAPICalls() {
         if (!globalThis.gpAPIs) {
             return;
@@ -262,6 +285,7 @@ export function pageFlowEditor(route) {
             loadSecrets(); // the secrets of the HTTP requests
             loadPagesAndRoles();
             loadAPICalls();
+            loadDocTemplates();
             const [cols, all, templates, flows] = await Promise.all([
                 allCollections(true).then(() => userCollections()),
                 allCollections(),
@@ -454,6 +478,14 @@ export function pageFlowEditor(route) {
                 return recordItems(base, data.flow.trigger?.collection);
             case "send_email":
                 return [{ path: base + ".queued", label: "queued count" }];
+            case "generate_document":
+                return [
+                    { path: base, label: "the document (attach it, store it in a file field, answer with it)" },
+                    { path: base + ".filename", label: "file name" },
+                    { path: base + ".pages", label: "pages" },
+                    { path: base + ".size", label: "size (bytes)" },
+                    { path: base + ".id", label: "id (documents collection)" },
+                ];
             case "http_request":
                 return [
                     { path: base + ".status", label: "status code" },
@@ -1265,6 +1297,9 @@ export function pageFlowEditor(route) {
      * select, a switch, a date, a record...), or a dynamic value (⚡).
      */
     function fieldValueInput(obj, f, stepId) {
+        if (f.type == "file" && documentOptions(stepId).length) {
+            return choiceExpr(obj, f.name, stepId, { options: () => documentOptions(stepId), emptyLabel: "- Not set -", placeholder: "{{steps.invoice}}" });
+        }
         if (!typedFieldTypes.has(f.type)) {
             return bareExpr(obj, f.name, stepId, { placeholder: f.type == "json" ? "JSON or dynamic content" : "" });
         }
@@ -2104,6 +2139,100 @@ export function pageFlowEditor(route) {
         ];
     }
 
+    // the "Generate document" step (Documents module)
+    function documentConfig(c, sid) {
+        if (!c.values || typeof c.values != "object") {
+            c.values = {};
+        }
+        const tpl = () => data.docTemplates.find((x) => x.id == c.template);
+        return [
+            () => {
+                if (!globalThis.gpDocuments) {
+                    return t.div({ rid: "nomodule", className: "alert warning m-b-sm" }, "The Documents module isn't installed: this step fails.");
+                }
+                if (!data.docTemplates.length) {
+                    return t.div(
+                        { rid: "none", className: "alert info m-b-sm" },
+                        t.span({ className: "m-r-auto" }, "No document templates yet."),
+                        t.a({ className: "btn sm", href: "#/documents", target: "_blank" }, t.i({ className: "ri-add-line", ariaHidden: true }), t.span({ className: "txt" }, "Create one")),
+                    );
+                }
+                return t.div(
+                    { rid: "tpl", className: "grid sm" },
+                    t.div(
+                        { className: "col-lg-8" },
+                        field({ label: "Document template" }, select({
+                            required: true,
+                            placeholder: "- Select a template -",
+                            options: () => data.docTemplates.map((x) => ({ value: x.id, label: (x.folder ? `${x.folder} / ` : "") + x.name + (x.collection ? ` (${x.collection})` : "") })),
+                            value: () => c.template,
+                            onchange: (v) => (c.template = v),
+                        })),
+                    ),
+                    t.div(
+                        { className: "col-lg-4 gp-link-col" },
+                        () =>
+                            c.template
+                                ? t.a({ rid: "edit_" + c.template, href: "#/documents/" + c.template, target: "_blank", className: "txt-sm" }, "Edit the template ", t.i({ className: "ri-external-link-line", ariaHidden: true }))
+                                : null,
+                        t.button(
+                            { type: "button", className: "btn xs circle transparent secondary m-l-5", ariaLabel: app.attrs.tooltip("Reload the templates"), onclick: () => loadDocTemplates() },
+                            t.i({ className: "ri-refresh-line", ariaHidden: true }),
+                        ),
+                    ),
+                );
+            },
+            () =>
+                tpl()?.collection
+                    ? t.div(
+                        { rid: "rec_" + tpl().collection },
+                        field({ label: `Record (${tpl().collection})`, hint: "The record the document is about: its id." },
+                            choiceExpr(c, "record", sid, { options: () => idOptions(sid, tpl().collection), placeholder: "{{trigger.record.id}}", emptyLabel: "- Choose the record -" })),
+                    )
+                    : t.div({ rid: "norec" }),
+            t.label({ className: "gp-label" }, "Values"),
+            t.div({ className: "field-help m-b-5" }, "Extra values for the template, read as {{values.name}} (e.g. a reference, a list of lines)."),
+            kvEditor(c, "values", sid, { keyPlaceholder: "name", addLabel: "Add value" }),
+            field({ label: "File name (optional)", hint: "Otherwise the template's, e.g. invoice-F-001.pdf." }, exprInput(c, "filename", sid, { placeholder: "invoice-{{trigger.record.number}}" })),
+        ];
+    }
+
+    // the documents attached to an email (Generate document steps)
+    function attachmentsEditor(c, sid) {
+        if (!globalThis.gpDocuments) {
+            return null;
+        }
+        return () => {
+            const options = documentOptions(sid);
+            const list = Array.isArray(c.attachments) ? c.attachments : [];
+            if (!options.length && !list.length) {
+                return t.div({ rid: "noatt", className: "field-help m-b-sm" }, "Attachments: add a Generate document step before this one to attach its PDF.");
+            }
+            return t.div(
+                { rid: "att_" + list.join("|") + options.length, className: "m-b-sm" },
+                t.label({ className: "gp-label" }, "Attachments"),
+                t.div(
+                    { className: "flex flex-wrap gap-5" },
+                    options.map((o) =>
+                        t.label(
+                            { className: "gp-att-option" },
+                            t.input({
+                                type: "checkbox",
+                                checked: list.includes(o.value),
+                                onchange: (e) => {
+                                    const cur = Array.isArray(c.attachments) ? c.attachments : [];
+                                    c.attachments = e.target.checked ? [...cur, o.value] : cur.filter((x) => x != o.value);
+                                },
+                            }),
+                            t.i({ className: "ri-attachment-2", ariaHidden: true }),
+                            t.span(null, o.label),
+                        )
+                    ),
+                ),
+            );
+        };
+    }
+
     // the lists of the saved test response of a call: a For each in one click
     function responseLists(call, sid) {
         const body = call.sample;
@@ -2581,6 +2710,7 @@ export function pageFlowEditor(route) {
                             c.template ? t.a({ href: "#/emails/templates/" + c.template, target: "_blank", className: "txt-sm" }, "Edit template ", t.i({ className: "ri-external-link-line" })) : null),
                     ),
                     field({ label: "To", hint: "Address(es), comma separated." }, exprInput(c, "to", sid, { placeholder: "{{.trigger.record.email}}" })),
+                    attachmentsEditor(c, sid),
                     () => {
                         if (!c.template) {
                             return null;
@@ -2610,6 +2740,8 @@ export function pageFlowEditor(route) {
                 ];
             case "api_call":
                 return apiCallConfig(c, sid);
+            case "generate_document":
+                return documentConfig(c, sid);
             case "http_request":
                 return [
                     t.div({ className: "grid sm" },
@@ -2701,7 +2833,7 @@ export function pageFlowEditor(route) {
                             : t.div({ rid: "nowait", className: "alert warning m-b-sm" }, `Turn on "Wait for the flow and respond" in the trigger: the caller gets this response.`),
                     t.div(
                         { className: "gp-segmented m-b-sm" },
-                        [["json", "ri-braces-line", "JSON"], ["text", "ri-text", "Text"], ["html", "ri-html5-line", "HTML"], ["redirect", "ri-share-forward-line", "Redirect"]].map(([value, icon, label]) =>
+                        [["json", "ri-braces-line", "JSON"], ["text", "ri-text", "Text"], ["html", "ri-html5-line", "HTML"], ...(globalThis.gpDocuments ? [["document", "ri-file-pdf-2-line", "Document"]] : []), ["redirect", "ri-share-forward-line", "Redirect"]].map(([value, icon, label]) =>
                             t.label(
                                 { className: () => `gp-segment ${mode() == value ? "active" : ""}` },
                                 t.input({ type: "radio", name: "respond_" + sid, checked: () => mode() == value, onchange: () => setMode(value) }),
@@ -2711,7 +2843,17 @@ export function pageFlowEditor(route) {
                         ),
                     ),
                     () =>
-                        mode() == "redirect"
+                        mode() == "document"
+                            ? t.div(
+                                { rid: "document" },
+                                field({ label: "Document", hint: "A document made by a Generate document step before this one." },
+                                    choiceExpr(c, "body", sid, { options: () => documentOptions(sid), emptyLabel: "- Choose the document -", placeholder: "{{steps.invoice}}" })),
+                                t.div({ className: "grid sm" },
+                                    t.div({ className: "col-lg-3" }, field({ label: "Status" }, exprInput(c, "status", sid, { mono: true, placeholder: "200" }))),
+                                    t.div({ className: "col-lg-9" }, switchField(c, "download", "Download it (otherwise shown in the browser)", "dl_" + sid)),
+                                ),
+                            )
+                            : mode() == "redirect"
                             ? t.div(
                                 { rid: "redirect" },
                                 field({ label: "Address", hint: "A path of the site (/thanks) or an http(s) address. Sent with status 303 (or a 30x status below)." }, exprInput(c, "redirect", sid, { mono: true, placeholder: "/thanks?order={{.steps.created.id}}" })),
@@ -2817,6 +2959,7 @@ export function pageFlowEditor(route) {
                                         className: "gp-add-item",
                                         hidden: (type == "set_trigger" && !(data.flow.trigger_type == "record" && data.flow.trigger?.timing == "before")) ||
                                             (type == "api_call" && !globalThis.gpAPIs) ||
+                                            (type == "generate_document" && !globalThis.gpDocuments) ||
                                             (stepTypes[type].group == "Pages" && data.flow.trigger_type != "action") ||
                                             (stepTypes[type].group == "Webhook" && data.flow.trigger_type != "webhook"),
                                         onclick: () => addStep(parent, prop, index, type),

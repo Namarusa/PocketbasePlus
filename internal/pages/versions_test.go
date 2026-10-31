@@ -209,7 +209,7 @@ func TestParts(t *testing.T) {
 	// the Basecoat script is loaded for a sidebar in a part
 	f.page(t, map[string]any{"slug": "side", "kind": kindPart, "published": false, "html": `<aside class="sidebar"><nav></nav></aside>`})
 	th := theme{Style: "vega", Mode: "light"}
-	if _, script, _ := render(t.Context(), f.app, pageView{HTML: `<div data-pb-part="side"></div><main></main>`, Kit: &th}, nil, false); !script {
+	if _, script, _ := render(t.Context(), f.app, pageView{HTML: `<div data-pb-part="side"></div><main></main>`, Kit: &th}, nil, false); !script.script {
 		t.Error("expected the Basecoat script for the sidebar of a part")
 	}
 

@@ -79,6 +79,7 @@ type renderer struct {
 	flash      *session.Flash
 	flashShown bool
 	widgets    bool // charts or calendars: the pages script and styles are loaded
+	pdf        bool // PDF viewers: their script and styles, and the CSP lets them read the files
 	charts     int
 	related    map[relatedKey]*core.Record // records reached through relations (nil: not shown)
 	formulas   map[string]*template.Template
@@ -109,12 +110,18 @@ var interactiveClasses = map[string]bool{
 	"toaster": true, "sidebar": true, "command": true,
 }
 
-// render returns the full HTML document of the page, and whether it loads
-// the Basecoat script (the CSP then allows the site's scripts).
-func render(ctx context.Context, app core.App, p pageView, query url.Values, preview bool) (string, bool, error) {
+// needs is what a rendered page needs from its CSP.
+type needs struct {
+	script bool // scripts of the site (Basecoat, the pages scripts)
+	fetch  bool // reading files from the scripts (the PDF viewers)
+}
+
+// render returns the full HTML document of the page, and what its CSP must
+// allow (the scripts of the site, reading files).
+func render(ctx context.Context, app core.App, p pageView, query url.Values, preview bool) (string, needs, error) {
 	body, err := parseBody(p.HTML)
 	if err != nil {
-		return "", false, err
+		return "", needs{}, err
 	}
 	p.CSS += expandParts(app, body, preview)
 	sanitize(body)
@@ -178,13 +185,18 @@ func render(ctx context.Context, app core.App, p pageView, query url.Values, pre
 		b.WriteString(`<script src="/p/_static/` + uiJS + `" defer></script>` + "\n")
 		script = true
 	}
+	if r.pdf {
+		b.WriteString(`<link rel="stylesheet" href="/p/_static/` + pdfCSS + `">` + "\n")
+		b.WriteString(`<script src="/p/_static/` + pdfJS + `" defer></script>` + "\n")
+		script = true
+	}
 	// "</" can't close the style element early
 	b.WriteString("<style>" + strings.ReplaceAll(p.CSS, "</", `<\/`) + "</style>\n</head>\n")
 	if err := xhtml.Render(&b, body); err != nil {
-		return "", false, err
+		return "", needs{}, err
 	}
 	b.WriteString("\n</html>\n")
-	return b.String(), script, nil
+	return b.String(), needs{script: script, fetch: r.pdf}, nil
 }
 
 // parseBody returns the body element of the editor HTML ("<body ...>...</body>"
@@ -241,6 +253,11 @@ func (r *renderer) walk(n *xhtml.Node, s scope, depth int) {
 		}
 		if hasAttr(n, attrCalendar) {
 			r.calendar(n)
+			removeBindingAttrs(n)
+			return
+		}
+		if hasAttr(n, attrPDF) {
+			r.pdfViewer(n, s)
 			removeBindingAttrs(n)
 			return
 		}

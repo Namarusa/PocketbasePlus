@@ -1,0 +1,651 @@
+/* PocketBasePlus pages: the PDF viewers (shadcn/ui look). The colors are the
+   Basecoat theme tokens, with fallbacks for the pages without the UI kit. */
+
+.gp-pdf {
+    --gp-fg: var(--foreground, #0a0a0a);
+    --gp-bg: var(--background, #fff);
+    --gp-muted: var(--muted, #f5f5f5);
+    --gp-muted-fg: var(--muted-foreground, #737373);
+    --gp-border: var(--border, #e5e5e5);
+    --gp-input: var(--input, #e5e5e5);
+    --gp-ring: var(--ring, #a1a1a1);
+    --gp-primary: var(--primary, #171717);
+    --gp-primary-fg: var(--primary-foreground, #fafafa);
+    --gp-accent: var(--accent, #f5f5f5);
+    --gp-radius: var(--radius, 0.625rem);
+    --gp-pdf-stage: var(--gp-muted);
+    --gp-pdf-gap: 12px;
+    container-type: inline-size;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: var(--gp-pdf-h, 640px);
+    overflow: hidden;
+    box-sizing: border-box;
+    color: var(--gp-fg);
+    background: var(--gp-bg);
+    border: 1px solid var(--gp-border);
+    border-radius: var(--gp-radius);
+    font: 14px/1.4 var(--font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+    color-scheme: light;
+}
+.dark .gp-pdf {
+    color-scheme: dark;
+}
+.gp-pdf *,
+.gp-pdf *::before,
+.gp-pdf *::after {
+    box-sizing: border-box;
+}
+.gp-pdf--bg-none {
+    --gp-pdf-stage: transparent;
+    background: transparent;
+}
+.gp-pdf--bg-dark {
+    --gp-pdf-stage: #2a2a2e;
+}
+.gp-pdf--bg-none.gp-pdf--frame-none {
+    border-color: transparent;
+}
+/* as tall as its pages: no scrolling inside, the toolbar stays at the top */
+.gp-pdf--fit {
+    height: auto;
+    overflow: visible;
+}
+
+/* --- toolbar -------------------------------------------------------------------------------- */
+
+.gp-pdf-toolbar {
+    position: relative;
+    z-index: 3;
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    min-height: 44px;
+    padding: 6px 8px;
+    background: var(--gp-bg);
+    border-bottom: 1px solid var(--gp-border);
+    border-radius: var(--gp-radius) var(--gp-radius) 0 0;
+}
+.gp-pdf--toolbar-bottom .gp-pdf-toolbar {
+    order: 2;
+    border-top: 1px solid var(--gp-border);
+    border-bottom: 0;
+    border-radius: 0 0 var(--gp-radius) var(--gp-radius);
+}
+.gp-pdf--fit .gp-pdf-toolbar {
+    position: sticky;
+    top: 0;
+}
+.gp-pdf--fit.gp-pdf--toolbar-bottom .gp-pdf-toolbar {
+    top: auto;
+    bottom: 0;
+}
+.gp-pdf-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+.gp-pdf-middle {
+    flex: 1 1 auto;
+    justify-content: center;
+}
+.gp-pdf-end {
+    margin-left: auto;
+}
+.gp-pdf-btn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: calc(var(--gp-radius) - 2px);
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+.gp-pdf-btn svg {
+    width: 16px;
+    height: 16px;
+}
+.gp-pdf-btn:hover:not(:disabled) {
+    background: var(--gp-accent);
+}
+.gp-pdf-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+.gp-pdf-btn[aria-pressed="true"],
+.gp-pdf-btn[aria-expanded="true"] {
+    background: var(--gp-accent);
+}
+.gp-pdf-btn:focus-visible,
+.gp-pdf-page-input:focus-visible,
+.gp-pdf-zoom-select:focus-visible,
+.gp-pdf-search-input:focus-visible,
+.gp-pdf-thumb:focus-visible,
+.gp-pdf-text-btn:focus-visible,
+.gp-pdf-password-input:focus-visible,
+.gp-pdf-scroller:focus-visible {
+    outline: 2px solid var(--gp-ring);
+    outline-offset: -2px;
+}
+.gp-pdf-pager {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 4px;
+    color: var(--gp-muted-fg);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.gp-pdf-page-input {
+    width: auto;
+    min-width: 2.6em;
+    height: 30px;
+    padding: 0 6px;
+    color: var(--gp-fg);
+    text-align: center;
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    background: var(--gp-bg);
+    border: 1px solid var(--gp-input);
+    border-radius: calc(var(--gp-radius) - 2px);
+    field-sizing: content;
+}
+.gp-pdf-zoom-select {
+    height: 30px;
+    max-width: 110px;
+    padding: 0 6px;
+    color: var(--gp-fg);
+    font: inherit;
+    background: var(--gp-bg);
+    border: 1px solid var(--gp-input);
+    border-radius: calc(var(--gp-radius) - 2px);
+    cursor: pointer;
+}
+
+/* search */
+.gp-pdf-searchbar {
+    display: flex;
+    flex: 1 0 100%;
+    align-items: center;
+    gap: 2px;
+    padding-top: 4px;
+}
+.gp-pdf-searchbar[hidden] {
+    display: none;
+}
+.gp-pdf-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 32px;
+    padding: 0 10px;
+    color: var(--gp-fg);
+    font: inherit;
+    background: var(--gp-bg);
+    border: 1px solid var(--gp-input);
+    border-radius: calc(var(--gp-radius) - 2px);
+}
+.gp-pdf--no-hits .gp-pdf-search-input {
+    border-color: #dc2626;
+}
+.gp-pdf-search-count {
+    flex: none;
+    min-width: 4.5em;
+    padding: 0 6px;
+    color: var(--gp-muted-fg);
+    font-size: 13px;
+    text-align: center;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* narrow viewers: the less used controls go */
+@container (max-width: 560px) {
+    .gp-pdf-zoom-select {
+        display: none;
+    }
+    .gp-pdf-middle {
+        flex: 0 1 auto;
+    }
+}
+@container (max-width: 400px) {
+    .gp-pdf-zoom-out,
+    .gp-pdf-zoom-in,
+    .gp-pdf-print {
+        display: none;
+    }
+    .gp-pdf-toolbar {
+        gap: 4px;
+        padding: 6px 4px;
+    }
+}
+
+/* --- pages ---------------------------------------------------------------------------------- */
+
+.gp-pdf-body {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    background: var(--gp-pdf-stage);
+    border-radius: 0 0 var(--gp-radius) var(--gp-radius);
+}
+.gp-pdf--toolbar-bottom .gp-pdf-body,
+.gp-pdf > .gp-pdf-body:only-child {
+    border-radius: var(--gp-radius) var(--gp-radius) 0 0;
+}
+.gp-pdf > .gp-pdf-body:only-child {
+    border-radius: var(--gp-radius);
+}
+.gp-pdf-scroller {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: auto;
+    padding: var(--gp-pdf-gap);
+    overscroll-behavior: contain;
+}
+.gp-pdf--fit .gp-pdf-scroller {
+    overflow: visible;
+}
+.gp-pdf-pages {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gp-pdf-gap);
+    width: max-content;
+    min-width: 100%;
+}
+.gp-pdf .gp-pdf-page {
+    position: relative;
+    flex: none;
+    margin: 0;
+    overflow: hidden;
+    background: #fff;
+    border-radius: 2px;
+}
+.gp-pdf--frame-shadow .gp-pdf-page {
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 4px 12px rgb(0 0 0 / 0.08);
+}
+.gp-pdf--frame-border .gp-pdf-page {
+    outline: 1px solid var(--gp-border);
+}
+.gp-pdf--bg-none .gp-pdf-scroller {
+    padding-left: 0;
+    padding-right: 0;
+}
+.gp-pdf--single .gp-pdf-page:not(.gp-pdf-page--shown) {
+    display: none;
+}
+.gp-pdf-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+/* the page while it's drawn */
+.gp-pdf-page:not(.gp-pdf-page--drawn)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 30%, rgb(0 0 0 / 0.04) 50%, transparent 70%) 0 0 / 200% 100%;
+    animation: gp-pdf-shimmer 1.4s linear infinite;
+}
+@keyframes gp-pdf-shimmer {
+    to {
+        background-position: -200% 0;
+    }
+}
+
+/* one page at a time: arrows on the sides */
+.gp-pdf-arrow {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    width: 36px;
+    height: 36px;
+    margin-top: -18px;
+    color: var(--gp-fg);
+    background: var(--gp-bg);
+    border: 1px solid var(--gp-border);
+    border-radius: 999px;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.gp-pdf-arrow--prev {
+    left: 8px;
+}
+.gp-pdf-arrow--next {
+    right: 8px;
+}
+.gp-pdf-body:hover .gp-pdf-arrow:not(:disabled),
+.gp-pdf-arrow:focus-visible {
+    opacity: 1;
+}
+.gp-pdf-arrow:disabled {
+    visibility: hidden;
+}
+.gp-pdf--one-page .gp-pdf-arrow {
+    display: none;
+}
+@media (hover: none) {
+    .gp-pdf-arrow:not(:disabled) {
+        opacity: 0.9;
+    }
+}
+
+/* links and search results over the page */
+.gp-pdf-links,
+.gp-pdf-marks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+.gp-pdf-links {
+    z-index: 2;
+}
+.gp-pdf-link {
+    position: absolute;
+    pointer-events: auto;
+    border-radius: 2px;
+}
+.gp-pdf-link:hover,
+.gp-pdf-link:focus-visible {
+    background: rgb(37 99 235 / 0.12);
+    outline: none;
+}
+.gp-pdf-mark {
+    position: absolute;
+    background: rgb(250 204 21 / 0.45);
+    border-radius: 2px;
+    mix-blend-mode: multiply;
+}
+.gp-pdf-mark--active {
+    background: rgb(249 115 22 / 0.55);
+    box-shadow: 0 0 0 2px rgb(249 115 22 / 0.6);
+}
+
+/* --- thumbnails ----------------------------------------------------------------------------- */
+
+.gp-pdf-sidebar {
+    display: none;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: 152px;
+    padding: 12px 8px;
+    overflow-y: auto;
+    background: var(--gp-bg);
+    border-right: 1px solid var(--gp-border);
+    overscroll-behavior: contain;
+}
+.gp-pdf--sidebar-open .gp-pdf-sidebar {
+    display: flex;
+}
+.gp-pdf-thumb {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 120px;
+    padding: 4px;
+    color: var(--gp-muted-fg);
+    font: inherit;
+    font-size: 12px;
+    background: transparent;
+    border: 0;
+    border-radius: calc(var(--gp-radius) - 2px);
+    cursor: pointer;
+}
+.gp-pdf-thumb-frame {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    background: #fff;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px var(--gp-border);
+}
+.gp-pdf-thumb-frame canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.gp-pdf-thumb:hover .gp-pdf-thumb-frame {
+    box-shadow: 0 0 0 2px var(--gp-ring);
+}
+.gp-pdf-thumb[aria-selected="true"] {
+    color: var(--gp-fg);
+    font-weight: 600;
+}
+.gp-pdf-thumb[aria-selected="true"] .gp-pdf-thumb-frame {
+    box-shadow: 0 0 0 2px var(--gp-primary);
+}
+/* narrow viewers: the thumbnails over the pages */
+@container (max-width: 640px) {
+    .gp-pdf-sidebar {
+        position: absolute;
+        inset: 0 auto 0 0;
+        z-index: 4;
+        box-shadow: 4px 0 16px rgb(0 0 0 / 0.15);
+    }
+}
+
+/* --- states --------------------------------------------------------------------------------- */
+
+.gp-pdf-status {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px;
+    color: var(--gp-muted-fg);
+    text-align: center;
+    background: var(--gp-pdf-stage);
+}
+.gp-pdf-status:empty {
+    display: none;
+}
+.gp-pdf--bg-none .gp-pdf-status {
+    background: var(--gp-bg);
+}
+.gp-pdf--fit .gp-pdf-status {
+    position: relative;
+    min-height: 240px;
+}
+.gp-pdf-status p {
+    max-width: 36em;
+    margin: 0;
+}
+.gp-pdf-status-icon svg {
+    width: 32px;
+    height: 32px;
+    opacity: 0.7;
+}
+.gp-pdf-spinner {
+    width: 24px;
+    height: 24px;
+    border: 2.5px solid var(--gp-border);
+    border-top-color: var(--gp-fg);
+    border-radius: 50%;
+    animation: gp-pdf-spin 0.8s linear infinite;
+}
+@keyframes gp-pdf-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .gp-pdf-spinner,
+    .gp-pdf-page:not(.gp-pdf-page--drawn)::after {
+        animation-duration: 4s;
+    }
+}
+.gp-pdf-text-btn {
+    display: inline-flex;
+    align-items: center;
+    height: 34px;
+    padding: 0 14px;
+    color: var(--gp-primary-fg);
+    font: inherit;
+    font-weight: 500;
+    text-decoration: none;
+    background: var(--gp-primary);
+    border: 0;
+    border-radius: calc(var(--gp-radius) - 2px);
+    cursor: pointer;
+}
+.gp-pdf-password {
+    display: flex;
+    gap: 6px;
+}
+.gp-pdf-password-input {
+    width: 200px;
+    height: 34px;
+    padding: 0 10px;
+    color: var(--gp-fg);
+    font: inherit;
+    background: var(--gp-bg);
+    border: 1px solid var(--gp-input);
+    border-radius: calc(var(--gp-radius) - 2px);
+}
+/* without the script, or nothing to show */
+.gp-pdf-fallback,
+.gp-pdf-empty {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    padding: 24px;
+    color: var(--gp-muted-fg);
+    text-align: center;
+    background: var(--gp-pdf-stage);
+}
+.gp-pdf-fallback a {
+    color: inherit;
+    font-weight: 600;
+}
+.gp-pdf--fit:has(> .gp-pdf-empty) {
+    height: auto;
+}
+
+/* --- full screen ---------------------------------------------------------------------------- */
+
+.gp-pdf:fullscreen {
+    width: 100vw;
+    height: 100vh;
+    border: 0;
+    border-radius: 0;
+}
+.gp-pdf:fullscreen .gp-pdf-toolbar,
+.gp-pdf:fullscreen .gp-pdf-body,
+.gp-pdf--expanded .gp-pdf-toolbar,
+.gp-pdf--expanded .gp-pdf-body {
+    border-radius: 0;
+}
+.gp-pdf.gp-pdf--expanded {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    width: auto;
+    height: auto;
+    border: 0;
+    border-radius: 0;
+}
+.gp-pdf-noscroll,
+.gp-pdf-noscroll body {
+    overflow: hidden;
+}
+
+/* --- printing (the pages as images, the rest of the site hidden) ---------------------------- */
+
+.gp-pdf-print {
+    display: none;
+}
+@media print {
+    html.gp-pdf-printing body > *:not(.gp-pdf-print) {
+        display: none !important;
+    }
+    html.gp-pdf-printing .gp-pdf-print {
+        display: block;
+    }
+    .gp-pdf-print img {
+        display: block;
+        width: 100%;
+        height: auto;
+        break-after: page;
+    }
+    .gp-pdf-print img:last-child {
+        break-after: auto;
+    }
+}
+
+/* --- text selection (PDF.js text layer) ----------------------------------------------------- */
+
+.gp-pdf .textLayer {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: clip;
+    line-height: 1;
+    text-align: initial;
+    opacity: 1;
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    forced-color-adjust: none;
+    transform-origin: 0 0;
+    caret-color: CanvasText;
+}
+.gp-pdf .textLayer :is(span, br) {
+    position: absolute;
+    color: transparent;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+}
+.gp-pdf .textLayer > :not(.markedContent),
+.gp-pdf .textLayer .markedContent span:not(.markedContent) {
+    z-index: 1;
+}
+.gp-pdf .textLayer span.markedContent {
+    top: 0;
+    height: 0;
+}
+.gp-pdf .textLayer span[role="img"] {
+    user-select: none;
+    cursor: default;
+}
+.gp-pdf .textLayer ::selection {
+    background: rgb(0 0 255 / 0.25);
+    background: color-mix(in srgb, AccentColor, transparent 75%);
+}
+.gp-pdf .textLayer br::selection {
+    background: transparent;
+}
+.gp-pdf .textLayer .endOfContent {
+    position: absolute;
+    inset: 100% 0 0;
+    z-index: 0;
+    display: block;
+    cursor: default;
+    user-select: none;
+}
+.gp-pdf .textLayer.selecting .endOfContent {
+    top: 0;
+}

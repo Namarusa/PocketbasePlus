@@ -3152,3 +3152,17 @@ html:has(.gp-form-embed) {
         opacity: 1;
     }
 }
+
+/* flows: the documents attached to an email */
+.gp-att-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--baseRadius, 6px);
+    background: var(--surfaceAlt1Color);
+    cursor: pointer;
+}
+.gp-att-option input {
+    margin: 0;
+}

@@ -240,3 +240,37 @@ func Do(ctx context.Context, req Request) (*Response, error) {
 	out.Duration = time.Since(start)
 	return out, err
 }
+
+// ErrTooLarge is returned by Download for a body larger than its limit.
+var ErrTooLarge = errors.New("the file is too large")
+
+// Download reads the body of a GET request (e.g. an image of a document),
+// with the same checks as the requests of the flows: private addresses are
+// blocked unless allowed.
+func Download(ctx context.Context, rawURL string, limit int64, timeout time.Duration) ([]byte, error) {
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		return nil, errors.New("the url must start with http:// or https://")
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid url: %w", err)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 400 {
+		return nil, fmt.Errorf("the server answered %d", res.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, ErrTooLarge
+	}
+	return raw, nil
+}

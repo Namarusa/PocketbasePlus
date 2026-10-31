@@ -269,7 +269,7 @@ const cache = new Map();
 
 const markup = (model) => model.toHTML().replace(/\sid="[^"]*"/, "");
 
-function renderSnippet(ed, ctx, model, el) {
+export function renderSnippet(ed, ctx, model, el) {
     const attrs = model.getAttributes();
     if (model.is("pb-chart") && !attrs["data-pb-collection"]) {
         el.innerHTML =
@@ -285,6 +285,7 @@ function renderSnippet(ed, ctx, model, el) {
             el.innerHTML = out;
             el.dataset.gppKey = key;
             el.ownerDocument.defaultView.gpUI?.init(el);
+            el.ownerDocument.defaultView.gpPDF?.init(el);
         }
     };
     if (cache.has(key)) {
@@ -323,7 +324,7 @@ function renderSnippet(ed, ctx, model, el) {
 /** Renders the charts again (the "View as" visitor changed). */
 export function refreshWidgets(ed) {
     ed?.getWrapper()
-        ?.find("[data-pb-chart], [data-pb-calendar]")
+        ?.find("[data-pb-chart], [data-pb-calendar], [data-pb-pdf]")
         .forEach((c) => c.view?.render());
 }
 

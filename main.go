@@ -17,6 +17,7 @@ import (
 	"github.com/Namarusa/PocketbasePlus/internal/dashboard"
 	"github.com/Namarusa/PocketbasePlus/internal/dashboards"
 	"github.com/Namarusa/PocketbasePlus/internal/deploy"
+	"github.com/Namarusa/PocketbasePlus/internal/documents"
 	"github.com/Namarusa/PocketbasePlus/internal/flows"
 	"github.com/Namarusa/PocketbasePlus/internal/forms"
 	"github.com/Namarusa/PocketbasePlus/internal/mail"
@@ -78,6 +79,10 @@ func main() {
 	// optional saved APIs of the flows (Flows → APIs, "API call" step): remove
 	// this line to remove the feature (run "pocketbaseplus apis uninstall" first)
 	apisources.Register(app)
+
+	// optional PDF documents (Documents menu, "Generate document" step): remove
+	// this line to remove the feature (run "pocketbaseplus documents uninstall" first)
+	documents.Register(app)
 
 	if slices.Contains(os.Args[1:], "serve") {
 		if err := deploy.CheckDataDir(app.DataDir()); err != nil {

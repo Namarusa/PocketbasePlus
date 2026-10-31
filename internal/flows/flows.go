@@ -532,6 +532,21 @@ func validateSteps(steps []Step, keys map[string]bool, before bool) error {
 func validateAPICallSteps(app core.App, steps []Step) error {
 	for i := range steps {
 		s := &steps[i]
+		if s.Type == "generate_document" {
+			label := s.Name
+			if label == "" {
+				label = s.Type
+			}
+			tpl := asString(s.Config, "template")
+			switch {
+			case documents == nil:
+				return fmt.Errorf("step %q: %w", label, errNoDocuments)
+			case tpl == "":
+				return fmt.Errorf("step %q: choose a document template", label)
+			case !documents.Exists(app, tpl):
+				return fmt.Errorf("step %q: the document template doesn't exist anymore", label)
+			}
+		}
 		if s.Type == "api_call" {
 			if err := validateAPICallStep(app, s); err != nil {
 				label := s.Name

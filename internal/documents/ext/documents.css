@@ -1,0 +1,737 @@
+/* Documents module: the list, the "New template" window and the editor. */
+
+.gp-doc-search {
+    max-width: 320px;
+}
+.gp-doc-table .gp-doc-folder td {
+    background: var(--surfaceAlt1Color);
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+.gp-doc-folder-toggle,
+.gp-doc-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+.gp-doc-link:hover {
+    text-decoration: underline;
+}
+
+/* new template */
+.gp-doc-starters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: var(--smSpacing);
+}
+.gp-doc-starter {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--lgBorderRadius);
+    background: var(--surfaceColor);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.gp-doc-starter i {
+    grid-row: span 2;
+    font-size: 1.5em;
+    color: var(--surfaceTxtHintColor);
+}
+.gp-doc-starter.active {
+    border-color: var(--primaryColor);
+    box-shadow: 0 0 0 1px var(--primaryColor);
+}
+.gp-doc-starter.active i {
+    color: var(--primaryColor);
+}
+
+/* editor: a full-height page, the panel (blocks, page, data) | the stage (the pages) */
+.gp-doc-page .gp-doc-builder {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 0;
+}
+.gp-doc-builder .page-header {
+    flex-shrink: 0;
+}
+.gp-doc-editor {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 330px minmax(0, 1fr);
+    border-top: 1px solid var(--surfaceAlt2Color);
+    margin: 0 calc(-1 * var(--baseSpacing, 30px));
+}
+.gp-doc-mobile-tabs {
+    display: none;
+}
+.gp-doc-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-right: 1px solid var(--surfaceAlt2Color);
+    background: var(--surfaceColor);
+}
+.gp-doc-panel .gp-doc-tabs {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0 10px;
+}
+.gp-doc-panel-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+}
+.gp-doc-panel-title {
+    margin-bottom: 6px;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    color: var(--surfaceTxtHintColor);
+}
+.gp-doc-palette {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    margin-bottom: 14px;
+}
+.gp-doc-palette-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 7px 4px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--baseRadius, 6px);
+    background: var(--surfaceColor);
+    color: inherit;
+    font: inherit;
+    font-size: var(--smFontSize);
+    cursor: grab;
+}
+.gp-doc-palette-item i {
+    font-size: 17px;
+    color: var(--surfaceTxtHintColor);
+}
+.gp-doc-palette-item:hover,
+.gp-doc-palette-item:focus-visible {
+    border-color: var(--primaryColor);
+}
+.gp-doc-palette-item:hover i {
+    color: var(--primaryColor);
+}
+.gp-doc-palette-item .txt {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gp-doc-block-actions {
+    display: flex;
+    margin-left: auto;
+}
+.gp-doc-block-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin-bottom: 10px;
+    font-size: 15px;
+}
+.gp-doc-block-title .txt-ellipsis {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--smFontSize);
+}
+.gp-doc-back {
+    margin-left: -6px;
+}
+.gp-doc-grip {
+    flex: none;
+    width: 14px;
+    color: var(--surfaceTxtHintColor);
+    opacity: 0;
+    cursor: grab;
+}
+.gp-doc-node:hover .gp-doc-grip {
+    opacity: 1;
+}
+/* where a dragged block goes */
+.gp-drop-before {
+    box-shadow: inset 0 3px 0 var(--primaryColor);
+}
+.gp-drop-after {
+    box-shadow: inset 0 -3px 0 var(--primaryColor);
+}
+.gp-drop-into {
+    background: color-mix(in srgb, var(--primaryColor) 14%, transparent);
+    border-radius: var(--baseRadius, 6px);
+}
+.gp-doc-part + .gp-doc-part {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--surfaceAlt2Color);
+}
+.gp-doc-part-head {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 4px;
+}
+.gp-doc-empty {
+    padding: 4px 0;
+}
+.gp-doc-node {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: calc(var(--depth, 0) * 12px);
+    border-radius: var(--baseRadius, 6px);
+}
+.gp-doc-node:hover,
+.gp-doc-node.hover,
+.gp-doc-node:focus-within {
+    background: var(--surfaceAlt1Color);
+}
+.gp-doc-node.active {
+    background: var(--surfaceAlt2Color);
+}
+.gp-doc-node.has-error .gp-doc-node-main {
+    color: var(--dangerColor);
+}
+.gp-doc-node-main {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.gp-doc-node-main .txt-ellipsis {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gp-doc-err-icon {
+    color: var(--dangerColor);
+}
+.gp-doc-labelled {
+    margin-bottom: var(--smSpacing);
+}
+.gp-doc-col-label {
+    margin: 4px 0 0 calc(var(--depth, 0) * 12px);
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    color: var(--surfaceTxtHintColor);
+}
+.gp-doc-indent {
+    margin-left: calc(var(--depth, 0) * 12px);
+}
+.gp-doc-add-menu {
+    min-width: 260px;
+}
+.gp-doc-add-menu .dropdown-item .txt {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+}
+
+/* settings */
+.gp-doc-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--surfaceAlt2Color);
+}
+.gp-doc-settings-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.gp-doc-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+.gp-doc-color {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+}
+.gp-doc-color input[type="color"] {
+    width: 34px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+.gp-doc-color input[type="text"] {
+    width: 90px;
+    padding: 4px 8px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--baseRadius, 6px);
+    background: var(--surfaceColor);
+    color: inherit;
+}
+.gp-doc-color {
+    padding: 0;
+}
+.gp-doc-row {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) auto;
+    gap: 6px;
+    align-items: start;
+    margin-bottom: 6px;
+}
+.gp-doc-cells {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.gp-doc-cell {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr) 64px;
+    gap: 6px;
+    align-items: center;
+    padding: 6px;
+    border-radius: var(--baseRadius, 6px);
+    background: var(--surfaceAlt1Color);
+}
+.gp-doc-cell .gp-segmented,
+.gp-doc-cell-actions {
+    grid-column: span 1;
+}
+.gp-doc-cell .gp-segmented {
+    grid-column: 1 / 3;
+}
+.gp-doc-cell-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+.gp-doc-w input {
+    width: 100%;
+}
+.gp-doc-seg-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
+.gp-doc-items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 0;
+}
+.gp-doc-showif summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+.gp-doc-formats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+.gp-doc-format {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 8px;
+    align-items: center;
+    padding: 8px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--baseRadius, 6px);
+    background: var(--surfaceColor);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.gp-doc-format.active {
+    border-color: var(--primaryColor);
+    box-shadow: 0 0 0 1px var(--primaryColor);
+}
+.gp-doc-format-shape {
+    grid-row: span 2;
+    width: 14px;
+    height: 19px;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    opacity: 0.6;
+}
+.gp-doc-format-shape.landscape {
+    width: 19px;
+    height: 14px;
+}
+.gp-rot {
+    display: inline-block;
+    transform: rotate(90deg);
+}
+.gp-doc-margins {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+}
+.gp-doc-list {
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: var(--baseRadius, 6px);
+    background: var(--surfaceAlt1Color);
+}
+.gp-doc-assets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.gp-doc-asset {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    padding: 4px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--baseRadius, 6px);
+    background: var(--surfaceColor);
+    cursor: pointer;
+}
+.gp-doc-asset.active {
+    border-color: var(--primaryColor);
+    box-shadow: 0 0 0 1px var(--primaryColor);
+}
+.gp-doc-asset img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.gp-doc-asset-del {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+}
+.gp-doc-upload {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    border: 1px dashed var(--surfaceAlt3Color);
+    border-radius: var(--baseRadius, 6px);
+    color: var(--surfaceTxtHintColor);
+    cursor: pointer;
+}
+.gp-doc-upload input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+.gp-doc-upload:focus-within {
+    outline: 2px solid var(--primaryColor);
+}
+
+/* formula inputs and their picker */
+.gp-doc-formula {
+    position: relative;
+    width: 100%;
+}
+.gp-doc-formula.gp-doc-formula > input,
+.gp-doc-formula.gp-doc-formula > textarea {
+    width: 100%;
+    padding-right: 34px;
+}
+.gp-doc-formula-btn {
+    position: absolute;
+    top: 6px;
+    right: 4px;
+    z-index: 1;
+    opacity: 0.6;
+}
+.gp-doc-formula:hover .gp-doc-formula-btn,
+.gp-doc-formula:focus-within .gp-doc-formula-btn,
+.gp-doc-formula.open .gp-doc-formula-btn {
+    opacity: 1;
+}
+.gp-doc-formula.open .gp-doc-formula-btn {
+    color: var(--primaryColor);
+}
+.gp-doc-picker {
+    position: fixed;
+    z-index: 1000;
+    width: min(380px, calc(100vw - 16px));
+    max-height: 340px;
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    border-radius: var(--lgBorderRadius);
+    background: var(--surfaceColor);
+    border: 1px solid var(--surfaceAlt3Color);
+    box-shadow: var(--boxShadow);
+}
+.gp-doc-picker-tabs {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.gp-doc-picker-search {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--baseRadius, 6px);
+    background: var(--surfaceColor);
+    color: inherit;
+}
+.gp-doc-picker-list {
+    overflow: auto;
+    margin-top: 6px;
+}
+.gp-doc-picker-group {
+    padding: 6px 6px 2px;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    color: var(--surfaceTxtHintColor);
+}
+.gp-doc-picker-item {
+    display: flex;
+    width: 100%;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: var(--baseRadius, 6px);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.gp-doc-picker-item:hover,
+.gp-doc-picker-item:focus-visible {
+    background: var(--surfaceAlt2Color);
+}
+.gp-doc-picker-item small {
+    margin-left: auto;
+}
+
+/* the stage: the pages, the blocks clickable over them */
+.gp-doc-stage {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--surfaceAlt1Color);
+}
+.gp-doc-stage-bar {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--surfaceAlt2Color);
+    background: var(--surfaceColor);
+}
+.gp-doc-sample {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 320px;
+    flex: 0 1 320px;
+}
+.gp-doc-sample > i {
+    color: var(--surfaceTxtHintColor);
+}
+.gp-doc-sample .select {
+    flex: 1;
+    min-width: 0;
+}
+.gp-doc-zoom {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.gp-doc-zoom .btn:not(.circle) {
+    min-width: 52px;
+}
+.gp-doc-stage-alert {
+    margin: 8px 12px 0;
+}
+.gp-doc-stage .gp-doc-errors {
+    margin: 8px 12px 0;
+}
+.gp-doc-sheets {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 24px;
+}
+.gp-doc-sheets-empty {
+    padding: 40px;
+    text-align: center;
+}
+.gp-doc-sheet {
+    position: relative;
+    margin: 0 auto 28px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 6px 20px rgba(0, 0, 0, 0.08);
+}
+.gp-doc-sheet canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.gp-doc-sheet-no {
+    position: absolute;
+    right: 0;
+    bottom: -20px;
+    font-size: 11px;
+    color: var(--surfaceTxtHintColor);
+}
+.gp-doc-sheets {
+    --gpDocSel: var(--infoColor, #3b82f6);
+}
+.gp-doc-hit {
+    position: absolute;
+    border-radius: 2px;
+    cursor: pointer;
+}
+.gp-doc-hit.hover,
+.gp-doc-sheets.dragging .gp-doc-hit {
+    outline: 1px dashed var(--gpDocSel);
+    background: color-mix(in srgb, var(--gpDocSel) 5%, transparent);
+}
+.gp-doc-hit.selected {
+    outline: 2px solid var(--gpDocSel);
+    background: color-mix(in srgb, var(--gpDocSel) 6%, transparent);
+}
+.gp-doc-hit.has-error {
+    outline: 2px dashed var(--dangerColor);
+}
+.gp-doc-hit.hover::before,
+.gp-doc-hit.selected::before {
+    content: attr(data-label);
+    position: absolute;
+    left: -2px;
+    bottom: 100%;
+    max-width: 240px;
+    padding: 1px 6px;
+    overflow: hidden;
+    border-radius: 3px 3px 0 0;
+    background: var(--gpDocSel);
+    color: #fff;
+    font-size: 11px;
+    line-height: 16px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    z-index: 2;
+}
+.gp-doc-hit.gp-drop-before {
+    box-shadow: 0 -3px 0 var(--gpDocSel);
+}
+.gp-doc-hit.gp-drop-after {
+    box-shadow: 0 3px 0 var(--gpDocSel);
+}
+.gp-doc-errors {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+.gp-doc-error {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: var(--baseRadius, 6px);
+    background: var(--dangerAltColor, rgba(220, 38, 38, 0.1));
+    color: var(--dangerColor);
+    font: inherit;
+    font-size: var(--smFontSize);
+    text-align: left;
+    cursor: pointer;
+}
+
+@media (max-width: 900px) {
+    .gp-doc-editor {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+    .gp-doc-mobile-tabs {
+        display: flex;
+        gap: 6px;
+        padding: 6px 12px;
+    }
+    .gp-doc-editor.view-edit .gp-doc-stage,
+    .gp-doc-editor.view-preview .gp-doc-panel {
+        display: none;
+    }
+    .gp-doc-panel {
+        border-right: 0;
+    }
+    .gp-doc-sheets {
+        padding: 12px;
+    }
+    .gp-doc-stage-bar {
+        flex-wrap: wrap;
+        padding: 4px 8px;
+    }
+    .gp-doc-sample {
+        flex: 1 1 100%;
+        max-width: none;
+    }
+    .gp-doc-pages-info,
+    .gp-doc-gen-link {
+        display: none;
+    }
+}
+@media (max-width: 760px) {
+    .gp-doc-editor {
+        margin: 0 -16px;
+    }
+    .gp-doc-starters,
+    .gp-doc-formats {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .gp-doc-margins {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (hover: none) {
+    .gp-doc-formula-btn {
+        opacity: 1;
+    }
+}

@@ -77,19 +77,19 @@ func errorPage(e *core.RequestEvent, status int) error {
 			view.Kit = nil
 		}
 	}
-	out, script, err := render(e.Request.Context(), e.App, view, e.Request.URL.Query(), false)
+	out, need, err := render(e.Request.Context(), e.App, view, e.Request.URL.Query(), false)
 	h := e.Response.Header()
 	h.Set("Cache-Control", "private, no-cache")
 	h.Set("Vary", "Cookie")
 	h.Set("X-Content-Type-Options", "nosniff")
 	if err != nil {
 		// the error page itself failed: a plain one
-		h.Set("Content-Security-Policy", pageCSP(false, false))
+		h.Set("Content-Security-Policy", pageCSP(needs{}, false))
 		texts := errorTexts[status]
 		return e.HTML(status, `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>`+html.EscapeString(texts[0])+
 			`</title></head><body style="font-family:system-ui,sans-serif;text-align:center;padding:15vh 16px"><h1>`+html.EscapeString(texts[0])+
 			`</h1><p>`+html.EscapeString(texts[1])+`</p><p><a href="/">Home</a></p></body></html>`)
 	}
-	h.Set("Content-Security-Policy", pageCSP(script, view.Kit != nil))
+	h.Set("Content-Security-Policy", pageCSP(need, view.Kit != nil))
 	return e.HTML(status, out)
 }

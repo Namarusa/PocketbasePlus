@@ -274,7 +274,7 @@ func TestKitShell(t *testing.T) {
 			t.Errorf("missing %q in\n%s", want, out)
 		}
 	}
-	if script || strings.Contains(out, "<script src") {
+	if script.script || strings.Contains(out, "<script src") {
 		t.Error("a page without interactive components must not load the Basecoat script")
 	}
 
@@ -282,7 +282,7 @@ func TestKitShell(t *testing.T) {
 	src := `<div class="tabs"><nav role="tablist"><button role="tab" aria-controls="p1">A</button></nav><div role="tabpanel" id="p1" hidden>x</div></div>` +
 		`<button command="show-modal" commandfor="d1" onclick="alert(1)">Open</button><dialog id="d1" class="dialog" closedby="any"><div><button command="close" commandfor="d1">x</button></div></dialog>`
 	out, script, _ = render(t.Context(), f.app, pageView{HTML: src, Kit: &th}, nil, false)
-	if !script || !strings.Contains(out, `<script src="/p/_static/basecoat-1.0.2.js" defer></script>`) {
+	if !script.script || !strings.Contains(out, `<script src="/p/_static/basecoat-1.0.2.js" defer></script>`) {
 		t.Errorf("expected the Basecoat script\n%s", out)
 	}
 	for _, want := range []string{`command="show-modal" commandfor="d1"`, `closedby="any"`, `role="tabpanel"`, "hidden"} {
@@ -295,12 +295,12 @@ func TestKitShell(t *testing.T) {
 	}
 	// without the kit: no Basecoat files, even with the same classes
 	out, script, _ = render(t.Context(), f.app, pageView{HTML: src}, nil, false)
-	if script || strings.Contains(out, "basecoat") || strings.Contains(out, "_theme.css") {
+	if script.script || strings.Contains(out, "basecoat") || strings.Contains(out, "_theme.css") {
 		t.Errorf("unexpected kit files without the kit\n%s", out)
 	}
 
-	if !strings.Contains(pageCSP(true, false), "script-src 'self';") || !strings.Contains(pageCSP(false, false), "script-src 'none'") ||
-		!strings.Contains(pageCSP(false, true), "script-src "+kitScriptHash+";") || !strings.Contains(pageCSP(true, true), "script-src 'self' 'sha256-") {
+	if !strings.Contains(pageCSP(needs{script: true}, false), "script-src 'self';") || !strings.Contains(pageCSP(needs{}, false), "script-src 'none'") ||
+		!strings.Contains(pageCSP(needs{}, true), "script-src "+kitScriptHash+";") || !strings.Contains(pageCSP(needs{script: true}, true), "script-src 'self' 'sha256-") {
 		t.Error("unexpected CSP")
 	}
 	// auto mode: no class, the script picks the mode
@@ -310,8 +310,8 @@ func TestKitShell(t *testing.T) {
 		t.Errorf("unexpected auto mode shell\n%s", out)
 	}
 	t.Setenv("POCKETBASEPLUS_OFFLINE", "1")
-	if strings.Contains(pageCSP(false, true), "https:") {
-		t.Errorf("offline pages must only load the app files: %s", pageCSP(false, true))
+	if strings.Contains(pageCSP(needs{}, true), "https:") {
+		t.Errorf("offline pages must only load the app files: %s", pageCSP(needs{}, true))
 	}
 }
 

@@ -1,8 +1,10 @@
 package mail
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/mail"
 	"strings"
 	"time"
@@ -98,6 +100,12 @@ func finalize(app core.App, tpl *core.Record, out Rendered, to string) Rendered 
 // EnqueueData renders the template with custom data (e.g. from a flow) and
 // queues it. The .app and .recipient data are filled automatically.
 func EnqueueData(app core.App, tpl *core.Record, to string, data map[string]any, sendAt time.Time, source string) (*core.Record, error) {
+	return EnqueueDataWith(app, tpl, to, data, sendAt, source, nil)
+}
+
+// EnqueueDataWith is EnqueueData with attachments: generated documents (ids
+// read by the attachment loader of the Documents module when it's sent).
+func EnqueueDataWith(app core.App, tpl *core.Record, to string, data map[string]any, sendAt time.Time, source string, attachments []string) (*core.Record, error) {
 	col, err := app.FindCollectionByNameOrId(messagesCollection)
 	if err != nil {
 		return nil, err
@@ -124,6 +132,9 @@ func EnqueueData(app core.App, tpl *core.Record, to string, data map[string]any,
 	msg.Set("status", StatusPending)
 	msg.Set("attempts", 0)
 	msg.Set("source", source)
+	if len(attachments) > 0 {
+		msg.Set("attachments", attachments)
+	}
 
 	if skipUnsubscribed(app, tpl, msg) {
 		return msg, app.Save(msg)
@@ -230,14 +241,20 @@ func (e *Engine) deliver(msg *core.Record) error {
 		}
 	}
 
+	attachments, err := loadAttachments(app, msg)
+	if err != nil {
+		return markFailedAttempt(app, msg, err)
+	}
+
 	meta := app.Settings().Meta
-	err := app.NewMailClient().Send(&mailer.Message{
-		From:    mail.Address{Name: meta.SenderName, Address: meta.SenderAddress},
-		To:      []mail.Address{{Address: msg.GetString("to")}},
-		Subject: msg.GetString("subject"),
-		HTML:    msg.GetString("html"),
-		Text:    msg.GetString("text"),
-		Headers: headers,
+	err = app.NewMailClient().Send(&mailer.Message{
+		From:        mail.Address{Name: meta.SenderName, Address: meta.SenderAddress},
+		To:          []mail.Address{{Address: msg.GetString("to")}},
+		Subject:     msg.GetString("subject"),
+		HTML:        msg.GetString("html"),
+		Text:        msg.GetString("text"),
+		Headers:     headers,
+		Attachments: attachments,
 	})
 	if err != nil {
 		return markFailedAttempt(app, msg, err)
@@ -367,4 +384,37 @@ func ParseAddresses(s string) []string {
 
 func isNoRows(err error) bool {
 	return errors.Is(err, errNoRows)
+}
+
+// AttachmentLoader returns a generated document (its bytes and file name).
+type AttachmentLoader func(app core.App, id string) ([]byte, string, error)
+
+var attachmentLoader AttachmentLoader
+
+// SetAttachmentLoader installs the loader of the attachments (the Documents
+// module).
+func SetAttachmentLoader(l AttachmentLoader) { attachmentLoader = l }
+
+// loadAttachments reads the attachments of a message.
+func loadAttachments(app core.App, msg *core.Record) (map[string]io.Reader, error) {
+	ids := msg.GetStringSlice("attachments")
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if attachmentLoader == nil {
+		return nil, errors.New("the message has attachments but the Documents module isn't installed")
+	}
+	out := map[string]io.Reader{}
+	for _, id := range ids {
+		raw, name, err := attachmentLoader(app, id)
+		if err != nil {
+			return nil, fmt.Errorf("attachment: %w", err)
+		}
+		// two documents with the same name keep both
+		for n := 2; out[name] != nil; n++ {
+			name = fmt.Sprintf("%s-%d.pdf", strings.TrimSuffix(name, ".pdf"), n)
+		}
+		out[name] = bytes.NewReader(raw)
+	}
+	return out, nil
 }
