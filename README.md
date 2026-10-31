@@ -83,12 +83,16 @@ Back up `pb_data` first (Settings → Backups, or a copy of the folder while the
   page in the site theme (or your own error page).
 - **0.5.0**: email templates get folders, and the account emails (verification, password reset...) can be designed in
   Emails → Templates. Nothing changes until you design one. On Coolify, set `POCKETBASEPLUS_VERSION` to `0.5`.
+- **0.6.0**: the [Documents](#documents) menu makes PDF documents (invoices, quotes, tickets with QR codes and
+  barcodes) and flows generate them, attach them to emails or answer webhooks with them; pages get PDF viewers and
+  Download PDF buttons. The migrations only add: the `document_templates` and `documents` collections, the attachments
+  of the queued emails, and PDFs in the page files. `documents uninstall --yes` removes the module. On Coolify, set `POCKETBASEPLUS_VERSION` to `0.6`.
 
 ## Docker
 
 One image, `ghcr.io/namarusa/pocketbaseplus`, for **linux/amd64**, **linux/arm64** and **linux/arm/v7**: Docker picks the
 right one on Linux servers, Docker Desktop (Windows, macOS Intel and Apple Silicon), Synology, QNAP, Unraid, TrueNAS
-SCALE, ZimaOS / CasaOS, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, the version (`0.5.0`) and its minor line (`0.5`).
+SCALE, ZimaOS / CasaOS, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, the version (`0.6.0`) and its minor line (`0.6`).
 
 ```sh
 docker run -d --name pocketbaseplus -p 8090:8090 \
@@ -120,7 +124,7 @@ the sources).
   `ENCRYPTION_KEY` (keep it safe), and Deploy. Coolify generates a domain; to use yours, change it in
   Domains with the container port (`https://app.example.com:8090`, visitors use `https://app.example.com`). The
   image's health check shows the app as *healthy*. Then set Settings → Application → *Application URL* to the domain and
-  *User IP proxy headers* to `X-Forwarded-For`. Redeploy pulls the latest `0.5.x` (the `POCKETBASEPLUS_VERSION` variable picks another line).
+  *User IP proxy headers* to `X-Forwarded-For`. Redeploy pulls the latest `0.6.x` (the `POCKETBASEPLUS_VERSION` variable picks another line).
 - **Commands**: `docker exec pocketbaseplus pocketbaseplus --dir /pb_data superuser upsert EMAIL PASS` (or
   `pages uninstall`, `migrate`...).
 
@@ -444,6 +448,10 @@ the Docker image and on every platform, with no browser or service next to it.
     **address** (a formula: `{{record.image}}/high.webp`, `https://cdn.example.com/{{record.sku}}.png`, or a file of
     the app, `/api/files/…`); PNG, JPEG, GIF or WebP. Addresses are downloaded by the server with the checks of the
     flows' HTTP requests: private and local addresses are refused unless `POCKETBASEPLUS_FLOWS_ALLOW_PRIVATE_HTTP=1`.
+  - **QR code / barcode**: a QR code (error correction low to highest), a Data Matrix, or a Code 128, Code 39 or
+    EAN barcode (the value written under it, if wanted) of a formula: `https://shop.example.com/orders/{{record.id}}`,
+    `{{record.sku}}`. Drawn as vector shapes ([boombuler/barcode](https://github.com/boombuler/barcode), MIT): sharp
+    printed at any size.
   - **Divider**, **Space**, **Page break**.
   - Every block can be **shown only when** a formula gives something (`{{record.paid}}`, `{{gt record.discount 0}}`).
 - **Formulas**: every text uses the [functions](#functions) of the pages and emails:
@@ -1001,6 +1009,10 @@ Its settings choose how it looks and what the visitor can do:
 
 Without JavaScript the viewer is a link to the PDF. The canvas of the builder shows the real viewer, and changes as
 the settings change. Password-protected PDFs ask for their password.
+
+The **Download PDF** block (*Data*) is a button downloading a Documents template drawn for the record of the page (or
+of a list item), with the same signed link: "Download the invoice" on an order page. *On click* can open it in a new
+tab instead; any link or button becomes one with `data-pb-document="<template>"`.
 
 ### Basecoat UI kit
 
