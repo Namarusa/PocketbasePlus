@@ -16,6 +16,7 @@ import (
 	"text/template"
 	"unicode/utf8"
 
+	"github.com/boombuler/barcode"
 	"github.com/go-pdf/fpdf"
 	_ "golang.org/x/image/webp"
 
@@ -117,6 +118,7 @@ type engine struct {
 	noBreak            bool // drawing columns that fit
 	accent, ink, muted [3]int
 	images             map[string]*fpdf.ImageInfoType // by asset|field|url
+	codes              map[string]barcode.Barcode     // by kind|ecc|value
 	names              map[string]string              // their names in the PDF
 	compress           bool
 	boxes              []Box
@@ -125,7 +127,7 @@ type engine struct {
 
 // render draws the document and returns the PDF and its page count.
 func render(ctx context.Context, spec *Spec, data map[string]any, load imageLoader, compress bool) (*rendered, error) {
-	e := &engine{ctx: ctx, spec: spec, data: data, load: load, parsed: map[string]*template.Template{}, images: map[string]*fpdf.ImageInfoType{}, names: map[string]string{}, compress: compress}
+	e := &engine{ctx: ctx, spec: spec, data: data, load: load, parsed: map[string]*template.Template{}, images: map[string]*fpdf.ImageInfoType{}, codes: map[string]barcode.Barcode{}, names: map[string]string{}, compress: compress}
 	pdf, n, err := e.run()
 	if err != nil {
 		return nil, err
@@ -371,6 +373,8 @@ func (e *engine) drawBlock(b *Block, x, w float64) {
 		e.drawTable(b, x, w)
 	case "image":
 		e.drawImage(b, x, w)
+	case "code":
+		e.drawCode(b, x, w)
 	case "divider":
 		e.ensure(4)
 		e.inked()
@@ -406,6 +410,11 @@ func (e *engine) blockHeight(b *Block, w float64) float64 {
 	case "image":
 		_, ih := e.imageSize(b, w)
 		return ih + 2
+	case "code":
+		if _, ch := e.codeSize(b, w); ch > 0 {
+			return ch + 2
+		}
+		return 0
 	case "divider":
 		return 4
 	case "spacer":

@@ -81,8 +81,13 @@ type Block struct {
 	URL   string  `json:"url,omitempty"`
 	Width float64 `json:"width,omitempty"` // mm
 
-	// spacer
+	// spacer; code: the height of the bars (mm)
 	Height float64 `json:"height,omitempty"` // mm
+
+	// code: a QR code or a barcode of Text (a formula); Width is its width
+	Code    string `json:"code,omitempty"`    // qr (default) | datamatrix | code128 | code39 | ean
+	ECC     string `json:"ecc,omitempty"`     // qr: the error correction, L | M (default) | Q | H
+	Caption bool   `json:"caption,omitempty"` // barcodes: the value written under the bars
 }
 
 // Row is a label and its value (formulas).
@@ -106,7 +111,7 @@ type TableCol struct {
 }
 
 var (
-	blockTypes = map[string]bool{"heading": true, "text": true, "fields": true, "columns": true, "table": true, "image": true, "divider": true, "spacer": true, "page_break": true}
+	blockTypes = map[string]bool{"heading": true, "text": true, "fields": true, "columns": true, "table": true, "image": true, "divider": true, "spacer": true, "page_break": true, "code": true}
 	formats    = map[string][2]float64{
 		"a3": {297, 420}, "a4": {210, 297}, "a5": {148, 210}, "letter": {215.9, 279.4}, "legal": {215.9, 355.6},
 	}

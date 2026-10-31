@@ -12,6 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
 	xhtml "golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 
 	"github.com/Namarusa/PocketbasePlus/internal/offline"
 	"github.com/Namarusa/PocketbasePlus/internal/pdfview"
@@ -44,6 +45,14 @@ const (
 	attrPDFName     = "data-pb-pdf-name"  // the name of the downloaded file
 	attrPDFLabel    = "data-pb-pdf-label" // the accessible name of the viewer
 	attrPDFEmpty    = "data-pb-pdf-empty" // shown when there's no PDF (a record without a file)
+)
+
+// Document links: a link (or button) downloading a Documents template drawn
+// for the record of the page or list item, through the same signed link as
+// the viewers.
+const (
+	attrDocument     = "data-pb-document"      // the template (id or slug)
+	attrDocumentMode = "data-pb-document-mode" // download (default) | open: in a new tab
 )
 
 // pdfMigrationFile lets the pages have PDF files (the viewers show them).
@@ -181,6 +190,35 @@ func (r *renderer) pdfViewer(n *xhtml.Node, s scope) {
 			`Open the PDF`+`</a></div>`)
 	}
 	r.pdf = true
+}
+
+// documentLink points a link at a document of the record.
+func (r *renderer) documentLink(n *xhtml.Node, s scope) {
+	if n.DataAtom != atom.A {
+		// a button: a link that looks the same
+		n.Data, n.DataAtom = "a", atom.A
+		n.Attr = slices.DeleteFunc(n.Attr, func(a xhtml.Attribute) bool { return a.Key == "type" || a.Key == "disabled" })
+	}
+	tpl := getAttr(n, attrDocument)
+	if tpl == "" {
+		setAttr(n, "href", "#")
+		r.fail(n, "Document link: choose the document template in its settings")
+		return
+	}
+	col, id := "", ""
+	if s.rec != nil {
+		col, id = s.col.Name, s.rec.Id
+	}
+	link := pdfview.ViewLink(r.app, tpl, col, id)
+	if getAttr(n, attrDocumentMode) == "open" {
+		setAttr(n, "target", "_blank")
+		setAttr(n, "rel", "noopener")
+	} else {
+		link += "&download=1"
+		setAttr(n, "download", "")
+		n.Attr = slices.DeleteFunc(n.Attr, func(a xhtml.Attribute) bool { return a.Key == "target" })
+	}
+	setAttr(n, "href", link)
 }
 
 // pdfSource returns the address of the PDF, its file name when known, and

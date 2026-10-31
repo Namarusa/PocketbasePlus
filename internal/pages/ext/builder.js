@@ -1114,7 +1114,7 @@ export function pageBuilder(route) {
         setPartBlocks(ed, !page.isPart); // parts don't nest
         setMemberBlocks(ed, page.kit);
         setWidgetBlocks(ed);
-        setPDFBlocks(ed);
+        setPDFBlocks(ed, page.kit);
         addBlockSearch(ed);
         // Basecoat classes: never shown as style tags (styling a button never restyles every .btn)
         kitClasses.forEach((name) => ed.Selectors.add({ name, private: true }));
@@ -1218,6 +1218,7 @@ export function pageBuilder(route) {
             data.page.kit = v.kit == "basecoat";
             setKitBlocks(editor, data.page.kit);
             setMemberBlocks(editor, data.page.kit);
+            setPDFBlocks(editor, data.page.kit);
         }
         setTimeout(() => {
             refreshCanvas();
@@ -1385,6 +1386,7 @@ export function pageBuilder(route) {
             if (kitChanged && editor) {
                 setKitBlocks(editor, draft.kit);
                 setMemberBlocks(editor, draft.kit);
+                setPDFBlocks(editor, draft.kit);
                 applyCanvasKit(editor, draft.kit, theme);
             }
             data.dirty = true;

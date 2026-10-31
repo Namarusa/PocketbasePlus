@@ -9,9 +9,11 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -95,7 +97,7 @@ func (f *fixture) template(t testing.TB, data map[string]any) *core.Record {
 // pdfText returns the texts drawn in an uncompressed PDF (the UTF-16 strings of the Tj operators).
 func pdfText(pdf []byte) string {
 	var out []string
-	for _, m := range regexp.MustCompile(`\(((?:\\.|[^\\)])*)\)Tj`).FindAllSubmatch(pdf, -1) {
+	for _, m := range regexp.MustCompile(`\(((?:\\.|[^\\)])*)\)\s*Tj`).FindAllSubmatch(pdf, -1) {
 		s := m[1]
 		s = bytes.ReplaceAll(s, []byte(`\(`), []byte("("))
 		s = bytes.ReplaceAll(s, []byte(`\)`), []byte(")"))
@@ -327,6 +329,10 @@ func TestRespondDocumentAndRoutes(t *testing.T) {
 	if again := do("GET", link, "", false); !bytes.Equal(again.Body.Bytes(), res.Body.Bytes()) {
 		t.Error("view: the document is made again (not cached)")
 	}
+	// the download links of the pages
+	if dl := do("GET", link+"&download=1", "", false); dl.Code != 200 || !strings.HasPrefix(dl.Header().Get("Content-Disposition"), "attachment; filename*=UTF-8''invoice%20F-001.pdf") {
+		t.Errorf("download: %d %v", dl.Code, dl.Header())
+	}
 	// by slug, without a record
 	if res := do("GET", pdfview.ViewLink(f.app, "invoice", "", ""), "", false); res.Code != 200 {
 		t.Errorf("view without a record: %d %s", res.Code, res.Body.String())
@@ -459,5 +465,80 @@ func TestBoxes(t *testing.T) {
 	// the text goes on after the spacer: a box on each page
 	if b := boxes["x"]; len(b) < 1 || b[len(b)-1].Page != res.Pages {
 		t.Errorf("text: %+v (%d pages)", b, res.Pages)
+	}
+}
+
+func TestCodes(t *testing.T) {
+	f := setup(t)
+	tpl := f.template(t, map[string]any{"slug": "codes", "footer": []Block{}})
+	tpl.Set("body", []Block{
+		{ID: "qr", Type: "code", Text: "https://example.com/orders/{{record.number}}", Width: 40, Align: "center"},
+		{ID: "dm", Type: "code", Code: "datamatrix", Text: "{{record.number}}"},
+		{ID: "bar", Type: "code", Code: "code128", Text: "{{record.number}}", Caption: true, Width: 70, Height: 20, Align: "right"},
+		{ID: "ean", Type: "code", Code: "ean", Text: "590123412345", Caption: true},
+		{ID: "badean", Type: "code", Code: "ean", Text: "12AB"},
+		{ID: "empty", Type: "code", Text: "{{record.nope}}"},
+	})
+	res := f.make(t, tpl, f.order, nil)
+	if len(res.Errors) != 1 || res.Errors[0].Block != "badean" || !strings.Contains(res.Errors[0].Error, "digits") {
+		t.Fatalf("errors: %v", res.Errors)
+	}
+	boxes := map[string]Box{}
+	for _, b := range res.Boxes {
+		boxes[b.Block] = b
+	}
+	if b := boxes["qr"]; b.W != 40 || b.X != 18+(174-40)/2.0 || b.H < 40 {
+		t.Errorf("qr: %+v", b)
+	}
+	if b := boxes["bar"]; b.W != 70 || b.X != 18+174-70 || b.H < 20 {
+		t.Errorf("barcode: %+v", b)
+	}
+	if _, ok := boxes["empty"]; ok {
+		t.Error("a code without a value has no box")
+	}
+	// the captions: the value, with the EAN check digit
+	if text := pdfText(res.PDF); !strings.Contains(text, "F-001") || !strings.Contains(text, "5901234123457") {
+		t.Errorf("captions: %s", text)
+	}
+	// every dark module of the QR code is drawn: the widths of its squares add up
+	qr, _ := encodeCode("qr", "", "https://example.com/orders/F-001")
+	dark := 0
+	r := qr.Bounds()
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			if isDark(qr.At(x, y)) {
+				dark++
+			}
+		}
+	}
+	module := 40 / float64(r.Dx()) / ptToMM // in points
+	drawn := 0.0
+	rects := regexp.MustCompile(`[\d.]+ [\d.]+ ([\d.]+) -?[\d.]+ re f`).FindAllSubmatch(res.PDF, -1)
+	// the QR code is drawn first
+	for _, m := range rects {
+		w, _ := strconv.ParseFloat(string(m[1]), 64)
+		drawn += w / module
+		if int(math.Round(drawn)) >= dark {
+			break
+		}
+	}
+	if math.Abs(drawn-float64(dark)) > 0.5 || dark < 100 {
+		t.Errorf("qr: %v modules drawn, %d dark", drawn, dark)
+	}
+
+	// the kinds are checked
+	col, _ := f.app.FindCollectionByNameOrId(TemplatesCollection)
+	rec := core.NewRecord(col)
+	rec.Load(map[string]any{"name": "x", "slug": "bad-code", "format": "a4", "body": []Block{{Type: "code", Code: "aztec", Text: "x"}}})
+	if err := f.app.Save(rec); err == nil || !strings.Contains(err.Error(), "aztec") {
+		t.Errorf("unknown kind: %v", err)
+	}
+	for _, kind := range []string{"qr", "datamatrix", "code128", "code39", "ean"} {
+		if _, err := encodeCode(kind, "H", "12345670"); err != nil {
+			t.Errorf("%s: %v", kind, err)
+		}
+	}
+	if _, err := encodeCode("qr", "", strings.Repeat("x", maxCodeValue+1)); err == nil {
+		t.Error("expected a too long value")
 	}
 }

@@ -182,11 +182,15 @@ export default async function ({ page, shot }) {
     const lamp = (await api("/api/collections/products/records?perPage=1&sort=name")).items[0];
     const tpl = await api("/api/collections/document_templates/records", {
         method: "POST",
-        body: { name: "Sheet", slug: "sheet", format: "a5", collection: "products", body: [{ id: "h", type: "heading", level: 1, text: "Sheet of {{record.name}}" }], filename: "sheet {{record.name}}" },
+        body: { name: "Sheet", slug: "sheet", format: "a5", collection: "products", body: [
+            { id: "h", type: "heading", level: 1, text: "Sheet of {{record.name}}" },
+            { id: "q", type: "code", text: "https://example.com/products/{{record.id}}", width: 35 },
+            { id: "b", type: "code", code: "code128", text: "{{record.id}}", caption: true },
+        ], filename: "sheet {{record.name}}" },
     });
     await api("/api/collections/pages/records", {
         method: "POST",
-        body: { title: "Product sheet", slug: "product-sheet", published: true, record_collection: products.id, html: `<div id="doc" data-pb-pdf="document" data-pb-pdf-document="${tpl.id}"></div>` },
+        body: { title: "Product sheet", slug: "product-sheet", published: true, record_collection: products.id, html: `<div id="doc" data-pb-pdf="document" data-pb-pdf-document="${tpl.id}"></div><p><a id="dl" data-pb-document="sheet" href="#">Download the sheet</a></p>` },
     });
     await page.goto(`${base}/product-sheet/${lamp.id}`);
     const doc = page.locator("#doc");
@@ -194,6 +198,10 @@ export default async function ({ page, shot }) {
     assert((await doc.locator(".textLayer").first().innerText()).includes("Sheet of " + lamp.name), "the document of the record");
     const [docDownload] = await Promise.all([page.waitForEvent("download"), doc.locator(".gp-pdf-download").click()]);
     equal(docDownload.suggestedFilename(), `sheet ${lamp.name}.pdf`, "the document's name");
+    await shot("document-codes");
+    // the Download PDF link: the same document, downloaded
+    const [linkDownload] = await Promise.all([page.waitForEvent("download"), page.locator("#dl").click()]);
+    equal(linkDownload.suggestedFilename(), `sheet ${lamp.name}.pdf`, "the document link's file");
     equal(problems.filter((p) => !/favicon/.test(p)), [], "browser errors");
     // a link that was changed doesn't open
     const forged = await page.evaluate((id) => {
@@ -208,7 +216,7 @@ export default async function ({ page, shot }) {
     await page.evaluate((id) => (location.hash = "#/pages/" + id), guide.id);
     const frame = page.frameLocator("iframe.gjs-frame");
     await frame.locator("#full .gp-pdf-page--drawn canvas").first().waitFor({ timeout: 20000 });
-    for (const label of ["PDF viewer", "Field PDF", "Document (PDF)"]) {
+    for (const label of ["PDF viewer", "Field PDF", "Document (PDF)", "Download PDF"]) {
         assert(await page.locator(".gjs-block", { hasText: label }).count(), `the block ${label} is missing`);
     }
     await frame.locator("#full").click({ position: { x: 300, y: 300 } });

@@ -141,6 +141,19 @@ func TestPDFViewer(t *testing.T) {
 		t.Errorf("document without a template: %.1500s", out)
 	}
 
+	// a document link: a download of the record's document; a button becomes a link
+	out, _ = view(`<button type="button" class="btn" data-pb-document="sheet">Get the <b>sheet</b></button>`, scope{col: f.products, rec: f.lamp})
+	if !regexp.MustCompile(`<a class="btn" download="" href="` + regexp.QuoteMeta(pdfview.ViewPath) + `sheet/products:` + lampID + `\?exp=\d+&amp;sig=[^"&]+&amp;download=1">Get the <b>sheet</b></a>`).MatchString(out) {
+		t.Errorf("document link: %.1500s", out)
+	}
+	out, _ = view(`<a data-pb-document="sheet" data-pb-document-mode="open">Open</a>`, scope{})
+	if !strings.Contains(out, `href="`+pdfview.ViewPath+`sheet/:-?exp=`) || !strings.Contains(out, `target="_blank" rel="noopener"`) || strings.Contains(out, "download") || strings.Contains(out, "data-pb-") {
+		t.Errorf("document link in a tab: %.1500s", out)
+	}
+	if out, _ = view(`<a data-pb-document="">PDF</a>`, scope{}); !strings.Contains(out, "choose the document template") {
+		t.Errorf("document link without a template: %.1500s", out)
+	}
+
 	// the CSP lets the viewers read their file
 	if csp := pageCSP(needs{script: true, fetch: true}, false); !strings.Contains(csp, "connect-src 'self' https:;") {
 		t.Errorf("csp: %s", csp)

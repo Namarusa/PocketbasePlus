@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.78.0
+	github.com/boombuler/barcode v1.0.2
 	github.com/dop251/goja v0.0.0-20260901132549-43234fa61381
 	github.com/ganigeorgiev/fexpr v0.6.0
 	github.com/go-pdf/fpdf v0.9.0

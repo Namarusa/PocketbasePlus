@@ -120,6 +120,22 @@ export default async function ({ page, shot, ctx }) {
     await page.locator(".gp-doc-mobile-tabs button", { hasText: "Edit" }).click();
     await page.setViewportSize(size);
 
+    // a QR code of the record, then a barcode with its value under it
+    await page.locator(".gp-doc-back").click();
+    const withQR = page.waitForResponse((r) => r.url().endsWith("/api/documents/preview") && r.request().postData()?.includes('"type":"code"'));
+    await page.locator(".gp-doc-palette-item", { hasText: "QR code" }).click();
+    const qrRes = await (await withQR).json();
+    const qrBlock = qrRes.boxes.find((b) => b.w == 30 && b.h >= 30)?.block;
+    assert(!qrRes.errors?.length && qrBlock, "the QR code: " + JSON.stringify([qrRes.errors, qrRes.boxes]));
+    await page.locator(".field", { hasText: "Kind" }).locator(".select").click();
+    const withBar = page.waitForResponse((r) => r.url().endsWith("/api/documents/preview") && r.request().postData()?.includes('"code":"code128"'));
+    await page.locator(".dropdown .dropdown-item, .select .options .option", { hasText: "Code 128" }).first().click();
+    await page.locator(".gp-doc-check", { hasText: "Value under the bars" }).click();
+    const barRes = await (await withBar).json();
+    assert(!barRes.errors?.length && barRes.boxes.some((b) => b.block == qrBlock && b.w == 60), "the barcode: " + JSON.stringify(barRes.errors));
+    await page.waitForTimeout(700);
+    await shot("codes");
+
     // the A5 format, then save
     await page.locator(".gp-doc-tabs button", { hasText: "Page" }).click();
     await page.locator(".gp-doc-format", { hasText: "A5" }).click();

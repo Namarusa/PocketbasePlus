@@ -14,10 +14,20 @@ const blockTypes = {
     columns: { label: "Columns", icon: "ri-layout-column-line", hint: "2 to 4 columns side by side" },
     table: { label: "Table", icon: "ri-table-line", hint: "One row per item of a list" },
     image: { label: "Image", icon: "ri-image-line", hint: "A logo, a signature, a photo of the record" },
+    code: { label: "QR code / barcode", icon: "ri-qr-code-line", hint: "A QR code, Data Matrix or barcode of a value" },
     divider: { label: "Divider", icon: "ri-separator", hint: "A line" },
     spacer: { label: "Space", icon: "ri-space", hint: "Empty space" },
     page_break: { label: "Page break", icon: "ri-page-separator", hint: "Next blocks on a new page" },
 };
+
+// the kinds of code blocks
+const codeKinds = [
+    { value: "qr", label: "QR code", hint: "Links, text, payment codes: any value" },
+    { value: "datamatrix", label: "Data Matrix", hint: "A small square code, for labels" },
+    { value: "code128", label: "Code 128", hint: "A barcode of letters and digits" },
+    { value: "code39", label: "Code 39", hint: "A barcode of capitals, digits and - . $ / + % space" },
+    { value: "ean", label: "EAN", hint: "A product barcode: 7, 8, 12 or 13 digits (EAN-8, EAN-13)" },
+];
 
 const parts = [
     ["header", "Header", "On top of every page"],
@@ -111,6 +121,8 @@ function newBlock(type, lists) {
             };
         case "image":
             return { ...b, width: 40 };
+        case "code":
+            return { ...b, code: "qr", text: "{{record.id}}", width: 30 };
         case "spacer":
             return { ...b, height: 6 };
     }
@@ -425,6 +437,11 @@ export function pageEditor(route) {
         }
         if (b.type == "image") {
             return "Image · " + (b.asset || (b.field ? "record." + b.field : b.url ? b.url : "none"));
+        }
+        if (b.type == "code") {
+            const kind = codeKinds.find((k) => k.value == (b.code || "qr"))?.label || "Code";
+            const v = (b.text || "").replace(/\s+/g, " ").trim();
+            return v ? `${kind} · ${v.length > 30 ? v.slice(0, 30) + "…" : v}` : kind;
         }
         if (b.type == "columns") {
             return `${(b.columns || []).length} columns`;
@@ -1065,6 +1082,59 @@ export function pageEditor(route) {
                         t.div({ className: "col-6" }, field({ label: "Width (mm)" }, numberInput(b, "width", { min: 5, max: 400 }))),
                         t.div({ className: "col-6" }, labelled("Align", segmented(b, "align", aligns, "al" + b.id))),
                     ),
+                );
+                break;
+            }
+            case "code": {
+                const square = () => !b.code || b.code == "qr" || b.code == "datamatrix";
+                out.push(
+                    field(
+                        { label: "Kind" },
+                        select({
+                            options: codeKinds.map((k) => ({ value: k.value, label: k.label })),
+                            value: () => b.code || "qr",
+                            onchange: (v) => {
+                                const was = square();
+                                b.code = v;
+                                if (was != square()) {
+                                    b.width = square() ? 30 : 60; // a square code or a long barcode
+                                }
+                            },
+                        }),
+                    ),
+                    () => t.div({ rid: "kh" + (b.code || "qr"), className: "field-help m-b-sm" }, codeKinds.find((k) => k.value == (b.code || "qr"))?.hint || ""),
+                    field(
+                        { label: "Value", name: "b_text", hint: "A formula: {{record.number}}, a link to the record, a payment code…" },
+                        formulaInput(b, "text", { id: "b_text", mono: true, placeholder: "https://example.com/orders/{{record.id}}" }),
+                    ),
+                    () =>
+                        square()
+                            ? t.div(
+                                { rid: "sq", className: "grid sm" },
+                                t.div({ className: "col-6" }, field({ label: "Size (mm)" }, numberInput(b, "width", { min: 8, max: 200, placeholder: "30" }))),
+                                t.div({ className: "col-6" }, labelled("Align", segmented(b, "align", aligns, "al" + b.id))),
+                                b.code == "datamatrix"
+                                    ? null
+                                    : t.div(
+                                        { className: "col-12" },
+                                        labelled(
+                                            "Error correction",
+                                            segmented(b, "ecc", [["L", "", "Low"], ["", "", "Medium"], ["Q", "", "High"], ["H", "", "Highest"]], "ecc" + b.id),
+                                        ),
+                                        t.div({ className: "field-help m-b-sm" }, "Higher: still readable when damaged or printed small, but denser."),
+                                    ),
+                            )
+                            : t.div(
+                                { rid: "bar", className: "grid sm" },
+                                t.div({ className: "col-6" }, field({ label: "Width (mm)" }, numberInput(b, "width", { min: 15, max: 400, placeholder: "60" }))),
+                                t.div({ className: "col-6" }, field({ label: "Bar height (mm)" }, numberInput(b, "height", { min: 4, max: 100, placeholder: "15" }))),
+                                t.div({ className: "col-6" }, labelled("Align", segmented(b, "align", aligns, "al" + b.id))),
+                                t.div(
+                                    { className: "col-6" },
+                                    t.label({ className: "gp-doc-check m-t-sm" }, t.input({ type: "checkbox", checked: () => !!b.caption, onchange: (e) => (b.caption = e.target.checked) }), "Value under the bars"),
+                                ),
+                            ),
+                    labelled("Color", colorInput(b, "color", "#000000")),
                 );
                 break;
             }

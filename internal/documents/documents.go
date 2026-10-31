@@ -197,6 +197,9 @@ func checkSpec(app core.App, spec *Spec) string {
 			if b.Type == "columns" && (len(b.Columns) < 1 || len(b.Columns) > 4) {
 				msg = "columns: 1 to 4 columns"
 			}
+			if b.Type == "code" && b.Code != "" && !codeKinds[b.Code] {
+				msg = fmt.Sprintf("code: unknown kind %q", b.Code)
+			}
 		})
 	}
 	if count > 500 {

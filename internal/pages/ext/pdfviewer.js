@@ -32,6 +32,30 @@ const isPDF = (name) => /\.pdf$/i.test(name || "");
 export function definePDFType(ed, ctx) {
     defineFileTrait(ed, ctx);
     defineToolsTrait(ed);
+    // a link (or button) downloading a document of the record
+    ed.DomComponents.addType("pb-document", {
+        extend: "link",
+        isComponent: (el) => el?.nodeType == 1 && el.hasAttribute("data-pb-document"),
+        model: {
+            defaults: {
+                name: "Document link",
+                icon: '<i class="ri-file-download-line"></i>',
+                traits: [
+                    { type: "select", name: "data-pb-document", label: "Template", options: [{ id: "", label: "Loading…" }] },
+                    {
+                        type: "select",
+                        name: "data-pb-document-mode",
+                        label: "On click",
+                        options: [
+                            { id: "", label: "Download the PDF" },
+                            { id: "open", label: "Open it in a new tab" },
+                        ],
+                    },
+                    "title",
+                ],
+            },
+        },
+    });
     ed.DomComponents.addType("pb-pdf", {
         isComponent: (el) => el?.nodeType == 1 && el.hasAttribute("data-pb-pdf"),
         model: {
@@ -169,6 +193,10 @@ function clearSource(comp) {
 
 /** The setting of the source of a selected viewer (and its options). */
 export async function refreshPDFTraits(comp, ctx) {
+    if (comp?.is?.("pb-document")) {
+        comp.getTrait("data-pb-document")?.set("options", await templateOptions(comp, ctx));
+        return;
+    }
     if (!comp?.is?.("pb-pdf")) {
         return;
     }
@@ -211,19 +239,23 @@ export async function refreshPDFTraits(comp, ctx) {
         comp.getTrait(def.name).set("options", def.options);
     }
     if (kind == "document") {
-        const list = await ctx.documentTemplates();
-        const col = ctx.collection(comp);
-        const options = list.length
-            ? [
-                  { id: "", label: "- Select a template -" },
-                  ...list.map((t) => ({
-                      id: t.id,
-                      label: t.name + (t.collection ? (col && t.collection != col.name ? ` (about ${t.collection}: not this page's records)` : ` (${t.collection})`) : ""),
-                  })),
-              ]
-            : [{ id: "", label: "- No templates: make one in Documents -" }];
-        comp.getTrait("data-pb-pdf-document")?.set("options", options);
+        comp.getTrait("data-pb-pdf-document")?.set("options", await templateOptions(comp, ctx));
     }
+}
+
+// the Documents templates, the ones about other records flagged
+async function templateOptions(comp, ctx) {
+    const list = await ctx.documentTemplates();
+    const col = ctx.collection(comp);
+    return list.length
+        ? [
+              { id: "", label: "- Select a template -" },
+              ...list.map((t) => ({
+                  id: t.id,
+                  label: t.name + (t.collection ? (col && t.collection != col.name ? ` (about ${t.collection}: not this page's records)` : ` (${t.collection})`) : ""),
+              })),
+          ]
+        : [{ id: "", label: "- No templates: make one in Documents -" }];
 }
 
 // "File": the PDFs uploaded to the page, and an upload button
@@ -304,10 +336,16 @@ function defineToolsTrait(ed) {
     });
 }
 
-export function setPDFBlocks(ed) {
+export function setPDFBlocks(ed, kit) {
     const bm = ed.BlockManager;
     const media = (name) => `<i class="${name} gpp-block-icon"></i>`;
     bm.add("gpp-pdf", { category: "Basic", label: "PDF viewer", media: media("ri-file-pdf-2-line"), content: `<div data-pb-pdf="file" data-pb-pdf-sidebar="closed"></div>` });
     bm.add("gpp-pdf-field", { category: "Data", label: "Field PDF", media: media("ri-file-pdf-line"), content: `<div data-pb-pdf="field" data-pb-pdf-sidebar="closed"></div>` });
     bm.add("gpp-pdf-document", { category: "Data", label: "Document (PDF)", media: media("ri-file-paper-2-line"), content: `<div data-pb-pdf="document" data-pb-pdf-tools="sidebar,pages,zoom,download,print,fullscreen"></div>` });
+    // the button follows the kit of the page (setPDFBlocks again when it changes)
+    const btn = kit
+        ? `class="btn"`
+        : `style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;font-weight:600"`;
+    bm.remove("gpp-document-link");
+    bm.add("gpp-document-link", { category: "Data", label: "Download PDF", media: media("ri-file-download-line"), content: `<a data-pb-document="" href="#" ${btn}>Download PDF</a>` });
 }

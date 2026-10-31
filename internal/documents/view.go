@@ -79,7 +79,11 @@ func viewRoute(e *core.RequestEvent) error {
 		return e.InternalServerError("The document couldn't be made.", nil)
 	}
 	h := e.Response.Header()
-	h.Set("Content-Disposition", "inline; filename*=UTF-8''"+url.PathEscape(item.filename))
+	disposition := "inline"
+	if q.Get("download") == "1" {
+		disposition = "attachment" // a document link of a page
+	}
+	h.Set("Content-Disposition", disposition+"; filename*=UTF-8''"+url.PathEscape(item.filename))
 	h.Set("Cache-Control", "private, max-age=300")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")

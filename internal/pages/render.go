@@ -261,6 +261,9 @@ func (r *renderer) walk(n *xhtml.Node, s scope, depth int) {
 			removeBindingAttrs(n)
 			return
 		}
+		if hasAttr(n, attrDocument) {
+			r.documentLink(n, s)
+		}
 		if getAttr(n, attrList) != "" {
 			if hasDynamic(n) {
 				r.dynamic(n, s)
