@@ -292,17 +292,122 @@
     flex: 1 1 auto;
     min-width: 0;
 }
+/* the API's variables, read-only under the call's */
 .gp-api-apivars {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 8px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--surfaceAlt3Color);
 }
-.gp-api-chip {
-    cursor: pointer;
+.gp-api-apivars-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+.gp-api-var-ro {
+    min-height: 32px;
+    padding: 0 10px;
+    border-radius: var(--baseRadius, 6px);
+    background: var(--surfaceAlt1Color);
+}
+.gp-api-var-ro code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* the variable menu of the template fields ({ } button, or "{{" typed) */
+.gp-varfield {
+    position: relative;
+    width: 100%;
+}
+.gp-varfield > input,
+.gp-varfield > textarea {
+    width: 100%;
+    padding-right: 34px;
+}
+.gp-varfield-btn {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    z-index: 1;
+    transform: translateY(-50%);
+    opacity: 0.55;
+}
+.gp-varfield.multiline .gp-varfield-btn {
+    top: 6px;
+    transform: none;
+}
+.gp-varfield:hover .gp-varfield-btn,
+.gp-varfield:focus-within .gp-varfield-btn,
+.gp-varfield.open .gp-varfield-btn {
+    opacity: 1;
+}
+.gp-varfield.open .gp-varfield-btn {
+    color: var(--primaryColor);
+}
+.gp-varmenu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 30;
+    width: min(360px, calc(100vw - 32px));
+    max-height: 300px;
+    overflow: auto;
+    padding: 6px;
+    border-radius: var(--lgBorderRadius);
+    background: var(--surfaceColor);
+    border: 1px solid var(--surfaceAlt3Color);
+    box-shadow: var(--boxShadow);
+}
+.gp-varmenu-group {
+    padding: 6px 8px 2px;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    color: var(--surfaceTxtHintColor);
+}
+.gp-varmenu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 32px;
+    padding: 4px 8px;
     border: 0;
-    font-family: var(--monospaceFontFamily);
+    border-radius: var(--baseRadius, 6px);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.gp-varmenu-item.active {
+    background: var(--surfaceAlt2Color);
+}
+.gp-varmenu-item i {
+    flex: none;
+    color: var(--surfaceTxtHintColor);
+}
+.gp-varmenu-item small {
+    margin-left: auto;
+    max-width: 50%;
+}
+.gp-varmenu-empty {
+    padding: 8px;
+}
+.gp-varmenu-help {
+    margin-top: 4px;
+    padding: 6px 8px 2px;
+    border-top: 1px solid var(--surfaceAlt2Color);
+    font-size: var(--xsFontSize, 11px);
+    color: var(--surfaceTxtHintColor);
+}
+@media (hover: none) {
+    .gp-varfield-btn {
+        opacity: 1;
+    }
+    .gp-varmenu-help {
+        display: none;
+    }
 }
 
 /* a row of name/value pairs with the "make it a variable" button */
@@ -357,4 +462,8 @@
 .gp-api-add.active {
     color: var(--successColor);
     opacity: 1;
+}
+.gp-api-secret .gp-varfield {
+    flex: 1 1 auto;
+    min-width: 0;
 }

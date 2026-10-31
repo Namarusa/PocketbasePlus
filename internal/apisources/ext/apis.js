@@ -5,6 +5,7 @@
 import { api, bare, field, handleError, page, select, sidebar } from "../pocketbaseplus/lib.js";
 import { secretName, secretPicker, secretRef } from "../pocketbaseplus/secrets.js";
 import { namesReady, parseCurl, splitURL, templateNames, varNameFor } from "./assist.js";
+import { varField } from "./varmenu.js";
 
 const base = app.pb.buildURL("/_/extensions/pocketbaseplus-apis/");
 if (!document.querySelector(`link[href="${base}apis.css"]`)) {
@@ -195,12 +196,30 @@ function openSourceModal(existing = null) {
         showSecret: false,
         isSaving: false,
     });
-    const vars = varInserter();
+    // the variable menu of the API's fields
+    const menu = {
+        groups: () => [{ label: "This API", icon: "ri-braces-line", items: varItems(data.variables) }],
+        onNew: (name) => {
+            if (!data.variables.some((v) => v.name == name)) {
+                data.variables = [...data.variables, { id: randomId(), name, default: "", required: false }];
+            }
+            return true;
+        },
+    };
     // the variables of the API's fields, added as they're typed
     const templates = () => [data.base_url, data.auth_name, data.username, data.secret, ...data.headers.map((h) => h.v)];
+    // the templates of the API's calls: they can use its variables too
+    const callTemplates = store({ list: [] });
+    if (existing) {
+        app.pb
+            .collection("api_calls")
+            .getFullList({ filter: app.pb.filter("source = {:id}", { id: existing.id }), fields: "path,query,headers,body,form", requestKey: null })
+            .then((calls) => (callTemplates.list = calls.flatMap((c) => [c.path, c.body, ...Object.values(c.query || {}), ...Object.values(c.headers || {}), ...Object.values(c.form || {})].map(String))))
+            .catch(() => {});
+    }
     const usedNames = () => {
         const used = new Set();
-        templates().forEach((src) => templateNames(src).forEach((n) => used.add(n)));
+        [...templates(), ...callTemplates.list].forEach((src) => templateNames(src).forEach((n) => used.add(n)));
         // a secret stored with variables: those are used
         for (const m of String(existing?.secret_hint || "").matchAll(/\{\{\.vars\.([A-Za-z0-9_]+)\}\}/g)) {
             used.add(m[1]);
@@ -246,7 +265,6 @@ function openSourceModal(existing = null) {
                 id: "gpAPISourceForm",
                 className: "modal-content",
                 inert: () => data.isSaving,
-                onmount: (el) => el.addEventListener("focusin", vars.track),
                 onsubmit: (e) => {
                     e.preventDefault();
                     save();
@@ -258,18 +276,18 @@ function openSourceModal(existing = null) {
                 t.div(
                     { className: "col-lg-12" },
                     field(
-                        { label: "Base address", name: "base_url", hint: "Each call adds its path, e.g. /customers/{{.vars.id}}. Variables work anywhere: https://{{.vars.host}}/v1. Leave empty to type full addresses in the calls." },
-                        t.input({ id: "base_url", name: "base_url", type: "text", className: "txt-code gp-api-tpl", placeholder: "https://api.example.com/v1", value: () => data.base_url, oninput: (e) => (data.base_url = e.target.value) }),
+                        { label: "Base address", name: "base_url", hint: "Each call adds its path, e.g. customers/{{id}}. Variables work anywhere: https://{{host}}/v1 (the { } button or typing {{ lists them). Leave empty to type full addresses in the calls." },
+                        varField(t.input({ id: "base_url", name: "base_url", type: "text", className: "txt-code gp-api-tpl", placeholder: "https://api.example.com/v1", value: () => data.base_url, oninput: (e) => (data.base_url = e.target.value) }), menu),
                     ),
                 ),
                 t.div({ className: "col-lg-12" }, field({ label: "Sign-in", name: "auth" }, select({ name: "auth", required: true, options: authTypes, value: () => data.auth, onchange: (v) => (data.auth = v || "none") }))),
                 t.div(
                     { className: "col-lg-6", hidden: () => data.auth != "header" && data.auth != "query" },
-                    field({ label: () => (data.auth == "query" ? "Parameter name" : "Header name"), name: "auth_name" }, t.input({ id: "auth_name", name: "auth_name", type: "text", className: "gp-api-tpl", placeholder: () => (data.auth == "query" ? "api_key" : "X-API-Key"), value: () => data.auth_name, oninput: (e) => (data.auth_name = e.target.value) })),
+                    field({ label: () => (data.auth == "query" ? "Parameter name" : "Header name"), name: "auth_name" }, varField(t.input({ id: "auth_name", name: "auth_name", type: "text", className: "gp-api-tpl", placeholder: () => (data.auth == "query" ? "api_key" : "X-API-Key"), value: () => data.auth_name, oninput: (e) => (data.auth_name = e.target.value) }), menu)),
                 ),
                 t.div(
                     { className: "col-lg-6", hidden: () => data.auth != "basic" },
-                    field({ label: "Username", name: "username" }, t.input({ id: "username", name: "username", type: "text", className: "gp-api-tpl", autocomplete: "off", value: () => data.username, oninput: (e) => (data.username = e.target.value) })),
+                    field({ label: "Username", name: "username" }, varField(t.input({ id: "username", name: "username", type: "text", className: "gp-api-tpl", autocomplete: "off", value: () => data.username, oninput: (e) => (data.username = e.target.value) }), menu)),
                 ),
                 t.div(
                     { className: "col-lg-6", hidden: () => data.auth == "none" },
@@ -278,20 +296,23 @@ function openSourceModal(existing = null) {
                             label: secretLabel,
                             name: "secret",
                             hint: (existing?.secret_hint ? `Stored (${existing.secret_hint}): leave empty to keep it. ` : "") +
-                                "Never shown again, nor in the run logs. Or a secret picked with the key button ({{secret.NAME}}, shared and encrypted), or a variable given by the flow, e.g. {{.vars.token}} (its value is hidden in the logs too).",
+                                "Never shown again, nor in the run logs. Or a secret picked with the key button ({{secret.NAME}}, shared and encrypted), or a variable given by the flow, e.g. {{token}} (its value is hidden in the logs too).",
                         },
                         t.div(
                             { className: "gp-api-secret" },
-                            t.input({
-                                id: "secret",
-                                name: "secret",
-                                type: () => (data.showSecret || data.secret.startsWith("{{") ? "text" : "password"),
-                                className: "gp-api-tpl",
-                                autocomplete: "new-password",
-                                placeholder: existing?.secret_hint ? "Unchanged" : "",
-                                value: () => data.secret,
-                                oninput: (e) => (data.secret = e.target.value),
-                            }),
+                            varField(
+                                t.input({
+                                    id: "secret",
+                                    name: "secret",
+                                    type: () => (data.showSecret || data.secret.startsWith("{{") ? "text" : "password"),
+                                    className: "gp-api-tpl",
+                                    autocomplete: "new-password",
+                                    placeholder: existing?.secret_hint ? "Unchanged" : "",
+                                    value: () => data.secret,
+                                    oninput: (e) => (data.secret = e.target.value),
+                                }),
+                                { ...menu, secrets: false }, // the key button lists them
+                            ),
                             t.button(
                                 { type: "button", className: "btn xs circle transparent secondary", ariaLabel: app.attrs.tooltip("Show / hide"), onclick: () => (data.showSecret = !data.showSecret) },
                                 t.i({ className: () => (data.showSecret ? "ri-eye-off-line" : "ri-eye-line"), ariaHidden: true }),
@@ -308,15 +329,15 @@ function openSourceModal(existing = null) {
                     t.label({ className: "gp-label" }, "Variables"),
                     t.div(
                         { className: "field-help m-b-5" },
-                        "Values given by the flow step to every call of the API: type {{name}} in the base address, the headers or the sign-in and the variable is added here (the { } button inserts one in the last field you clicked).",
+                        "Values given by the flow step to every call of the API, which can use them too. Type {{name}} in the base address, the headers or the sign-in (or use their { } button) and the variable is added here.",
                     ),
-                    variablesEditor(data, vars.insert, "No variables: type {{name}} in a field to add one.", () => [], usedNames),
+                    variablesEditor(data, "No variables: type {{name}} in a field to add one.", () => [], usedNames),
                 ),
                 t.div(
                     { className: "col-lg-12" },
                     t.label({ className: "gp-label" }, "Shared headers"),
                     t.div({ className: "field-help m-b-5" }, "Sent with every call. For keys, use the sign-in or a secret: {{secret.NAME}}."),
-                    pairsEditor(data, "headers", { keyPlaceholder: "Header-Name", addLabel: "Add header", tpl: true }),
+                    pairsEditor(data, "headers", { keyPlaceholder: "Header-Name", addLabel: "Add header", menu }),
                 ),
                 t.div(
                     { className: "col-lg-6" },
@@ -362,7 +383,8 @@ function randomId() {
 }
 
 // toVariable(p): the "make it a variable" button of the rows with a fixed value
-function pairsEditor(obj, prop, { keyPlaceholder = "name", valuePlaceholder = "value", addLabel = "Add", tpl = false, toVariable = null } = {}) {
+// menu: the variable menu of the values (see varField)
+function pairsEditor(obj, prop, { keyPlaceholder = "name", valuePlaceholder = "value", addLabel = "Add", menu = null, toVariable = null } = {}) {
     return t.div(
         { className: "gp-kv" },
         () =>
@@ -370,7 +392,11 @@ function pairsEditor(obj, prop, { keyPlaceholder = "name", valuePlaceholder = "v
                 t.div(
                     { rid: "kv_" + p.id, className: `gp-kv-row ${toVariable ? "gp-kv-row-var" : ""}` },
                     bare(t.input({ type: "text", className: "txt-code", placeholder: keyPlaceholder, value: () => p.k, oninput: (e) => (p.k = e.target.value) })),
-                    bare(t.input({ type: "text", className: `${tpl ? "gp-api-tpl" : ""}`, placeholder: valuePlaceholder, value: () => p.v, oninput: (e) => (p.v = e.target.value) })),
+                    bare(
+                        menu
+                            ? varField(t.input({ type: "text", className: "gp-api-tpl", placeholder: valuePlaceholder, value: () => p.v, oninput: (e) => (p.v = e.target.value) }), menu)
+                            : t.input({ type: "text", placeholder: valuePlaceholder, value: () => p.v, oninput: (e) => (p.v = e.target.value) }),
+                    ),
                     toVariable
                         ? t.button(
                             {
@@ -544,8 +570,6 @@ export function pageCall(route) {
     }
 
     const source = () => sourceOf(data.call.source);
-    const vars = varInserter();
-    const insertVar = vars.insert;
 
     // --- less typing: variables found in the templates, values made variables,
     // pasted addresses and cURL commands, the request previewed as it's edited
@@ -561,6 +585,21 @@ export function pageCall(route) {
         return used;
     };
     const autoWatcher = autoVariables(data.call, callTemplates, apiVarNames, () => [data.call.path]);
+
+    // the variable menu of the call's fields: its variables and its API's
+    const menu = {
+        groups: () => [
+            { label: "This call", icon: "ri-braces-line", items: varItems(data.call.variables) },
+            { label: "From the API", icon: "ri-plug-line", items: varItems(source()?.variables || []) },
+        ],
+        onNew: (name) => {
+            if (!apiVarNames().includes(name) && !data.call.variables.some((v) => v.name == name)) {
+                const inPath = templateNames(data.call.path).has(name) || document.activeElement?.name == "path";
+                data.call.variables = [...data.call.variables, { id: randomId(), name, default: "", required: inPath }];
+            }
+            return true;
+        },
+    };
 
     // a fixed value of a parameter, header or form field becomes a variable
     // (its value is the default): the flows can then give another one
@@ -713,7 +752,6 @@ export function pageCall(route) {
                 {
                     rid: "editor",
                     className: "gp-api-editor",
-                    onmount: (el) => el.addEventListener("focusin", vars.track),
                     onunmount: () => {
                         autoWatcher.unwatch();
                         previewWatcher.unwatch();
@@ -756,7 +794,7 @@ export function pageCall(route) {
                     { className: "gp-api-url-path" },
                     field(
                         { name: "path" },
-                        t.input({
+                        varField(t.input({
                             name: "path",
                             type: "text",
                             className: "txt-code gp-api-tpl",
@@ -771,7 +809,7 @@ export function pageCall(route) {
                                     }
                                 }
                             },
-                        }),
+                        }), menu),
                     ),
                 ),
             ),
@@ -792,27 +830,41 @@ export function pageCall(route) {
                 );
             },
 
-            section("Variables", "Values given by the flow step, with those of the API. Type {{name}} in the path, parameters, headers or body and the variable is added here; its default value is used by Test and when the flow gives none. Values are escaped for their place."),
-            () =>
-                source()?.variables?.length
-                    ? t.div(
-                        { rid: "apivars_" + source().id + source().updated, className: "gp-api-apivars" },
-                        t.span({ className: "txt-hint txt-sm" }, "From the API:"),
-                        ...source().variables.map((v) =>
-                            t.button(
-                                { type: "button", className: "label sm gp-api-chip", title: `Insert {{.vars.${v.name}}} (test value in the API settings)`, onmousedown: (e) => e.preventDefault(), onclick: () => insertVar(v.name) },
-                                t.i({ className: "ri-braces-line", ariaHidden: true }),
-                                v.name,
-                            )
+            section("Variables", "Values given by the flow step. Type {{name}} in the path, a parameter, a header or the body (or use their { } button: it lists these variables and the API's) and the variable is added here. The default value is used by Test and when the flow gives none. Values are escaped for their place."),
+            variablesEditor(c, "No variables of its own: type {{name}} in a field (e.g. customers/{{id}}), or use the \"Variable\" button of a parameter.", apiVarNames, usedNames),
+            () => {
+                const list = source()?.variables || [];
+                if (!list.length) {
+                    return null;
+                }
+                const used = usedNames();
+                return t.div(
+                    { rid: "apivars_" + source().id + source().updated + [...used].join(), className: "gp-kv gp-api-apivars" },
+                    t.div(
+                        { className: "gp-api-apivars-head" },
+                        t.span({ className: "txt-hint txt-sm" }, t.i({ className: "ri-plug-line", ariaHidden: true }), ` From the API “${source().name}”: shared by its calls, given by the flow step`),
+                        t.button(
+                            { type: "button", className: "btn xs secondary transparent", onclick: () => openSourceModal(source()) },
+                            t.i({ className: "ri-settings-3-line", ariaHidden: true }),
+                            t.span({ className: "txt" }, "API settings"),
                         ),
-                    )
-                    : null,
-            variablesEditor(c, insertVar, "No variables of its own: type {{name}} in a field (e.g. customers/{{id}}), or use the \"Variable\" button of a parameter.", () => (source()?.variables || []).map((v) => v.name), usedNames),
+                    ),
+                    ...list.map((v) =>
+                        t.div(
+                            { className: "gp-api-var-row gp-api-var-ro" },
+                            t.code(null, v.name),
+                            t.span({ className: "txt-hint txt-ellipsis" }, v.default || v.test ? `default: ${v.default || v.test}` : "no default"),
+                            t.span({ className: `label sm ${used.has(v.name) ? "success" : ""}` }, used.has(v.name) ? "used" : "not used"),
+                            t.span(),
+                        )
+                    ),
+                );
+            },
 
             section("Query parameters", "Added to the address. A parameter whose value is a variable is left out when the variable is empty."),
-            pairsEditor(c, "query", { keyPlaceholder: "name", addLabel: "Add parameter", tpl: true, toVariable }),
+            pairsEditor(c, "query", { keyPlaceholder: "name", addLabel: "Add parameter", menu, toVariable }),
             section("Headers", "In addition to the shared headers of the API and its sign-in."),
-            pairsEditor(c, "headers", { keyPlaceholder: "Header-Name", addLabel: "Add header", tpl: true, toVariable }),
+            pairsEditor(c, "headers", { keyPlaceholder: "Header-Name", addLabel: "Add header", menu, toVariable }),
 
             t.div(
                 { hidden: () => c.method == "GET" || c.method == "HEAD" },
@@ -822,17 +874,20 @@ export function pageCall(route) {
                     { hidden: () => !["json", "xml", "text"].includes(c.body_type) },
                     field(
                         { name: "body", hint: () => ({ json: "Values in strings are escaped; a variable alone in place of a value is inserted as JSON (lists, numbers...).", xml: "Values are escaped as XML text.", text: "Sent as written." })[c.body_type] || "" },
-                        t.textarea({
-                            name: "body",
-                            rows: 8,
-                            className: "txt-code gp-api-tpl",
-                            placeholder: () => ({ json: '{\n  "email": "{{.vars.email}}",\n  "tags": {{.vars.tags}}\n}', xml: "<order>\n  <id>{{.vars.id}}</id>\n</order>" })[c.body_type] || "",
-                            value: () => c.body,
-                            oninput: (e) => (c.body = e.target.value),
-                        }),
+                        varField(
+                            t.textarea({
+                                name: "body",
+                                rows: 8,
+                                className: "txt-code gp-api-tpl",
+                                placeholder: () => ({ json: '{\n  "email": "{{email}}",\n  "tags": {{tags}}\n}', xml: "<order>\n  <id>{{id}}</id>\n</order>" })[c.body_type] || "",
+                                value: () => c.body,
+                                oninput: (e) => (c.body = e.target.value),
+                            }),
+                            menu,
+                        ),
                     ),
                 ),
-                t.div({ hidden: () => c.body_type != "form" }, pairsEditor(c, "form", { keyPlaceholder: "field", addLabel: "Add field", tpl: true, toVariable })),
+                t.div({ hidden: () => c.body_type != "form" }, pairsEditor(c, "form", { keyPlaceholder: "field", addLabel: "Add field", menu, toVariable })),
             ),
 
             section("Response"),
@@ -986,29 +1041,9 @@ export function pageCall(route) {
     }
 }
 
-// the {{.vars.x}} buttons insert into the last focused template input
-function varInserter() {
-    let lastInput = null;
-    return {
-        track(e) {
-            if (e.target.matches?.(".gp-api-tpl")) {
-                lastInput = e.target;
-            }
-        },
-        insert(name) {
-            const text = `{{.vars.${name}}}`;
-            const el = lastInput && document.body.contains(lastInput) ? lastInput : null;
-            if (!el) {
-                navigator.clipboard?.writeText(text).catch(() => {});
-                app.toasts.info(`Copied ${text}: click a field first to insert it there.`);
-                return;
-            }
-            const start = el.selectionStart ?? el.value.length;
-            el.setRangeText(text, start, el.selectionEnd ?? start, "end");
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            el.focus();
-        },
-    };
+// the variables of an API or a call, as items of the variable menu
+function varItems(list) {
+    return list.filter((v) => nameRegex.test(v.name || "")).map((v) => ({ name: v.name, hint: v.default || v.test ? `default: ${v.default || v.test}` : "" }));
 }
 
 /**
@@ -1016,7 +1051,7 @@ function varInserter() {
  * obj.variables. used() → the names its templates use (the others are shown
  * as unused).
  */
-function variablesEditor(obj, insertVar, emptyText, taken = () => [], used = null) {
+function variablesEditor(obj, emptyText, taken = () => [], used = null) {
     return t.div(
         { className: "gp-kv" },
         () =>
@@ -1025,12 +1060,12 @@ function variablesEditor(obj, insertVar, emptyText, taken = () => [], used = nul
                     t.div({ rid: "vhead", className: "gp-api-var-row gp-api-head" }, t.span(null, "Name"), t.span({ title: "Used by the Test button, and when the flow gives no value" }, "Default value"), t.span(null, "Required"), t.span()),
                     ...obj.variables.map((v) =>
                         t.div(
-                            { rid: "var_" + v.id, className: () => `gp-api-var-row ${used && v.name && namesReady() && !used().has(v.name) ? "unused" : ""}`, title: () => (used && v.name && namesReady() && !used().has(v.name) ? "Not used in the call: remove it, or insert it with the { } button" : "") },
+                            { rid: "var_" + v.id, className: () => `gp-api-var-row ${used && v.name && namesReady() && !used().has(v.name) ? "unused" : ""}`, title: () => (used && v.name && namesReady() && !used().has(v.name) ? "Not used: remove it, or insert it with the { } button of a field" : "") },
                             bare(
                                 t.input({
                                     type: "text",
                                     className: () => `txt-code ${v.name && (!nameRegex.test(v.name) || taken().includes(v.name)) ? "gp-invalid" : ""}`,
-                                    title: () => (taken().includes(v.name) ? "The API already has this variable" : ""),
+                                    title: () => (taken().includes(v.name) ? `The API already has "${v.name}": remove this one and use the API's (listed in the { } menu)` : ""),
                                     placeholder: "name",
                                     value: () => v.name,
                                     oninput: (e) => (v.name = e.target.value),
@@ -1040,10 +1075,6 @@ function variablesEditor(obj, insertVar, emptyText, taken = () => [], used = nul
                             t.div({ className: "field gp-checkbox" }, t.input({ type: "checkbox", id: "req_" + v.id, checked: () => !!v.required, onchange: (e) => (v.required = e.target.checked) }), t.label({ htmlFor: "req_" + v.id })),
                             t.div(
                                 { className: "gp-api-var-actions" },
-                                t.button(
-                                    { type: "button", className: "btn xs secondary transparent", disabled: () => !nameRegex.test(v.name), title: "Insert in the last field", onmousedown: (e) => e.preventDefault(), onclick: () => insertVar(v.name) },
-                                    t.i({ className: "ri-braces-line", ariaHidden: true }),
-                                ),
                                 t.button(
                                     { type: "button", className: "btn sm circle transparent danger", ariaLabel: app.attrs.tooltip("Remove"), onclick: () => (obj.variables = obj.variables.filter((x) => x.id != v.id)) },
                                     t.i({ className: "ri-close-line", ariaHidden: true }),
