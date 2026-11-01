@@ -266,6 +266,8 @@ var staticFiles = func() map[string]staticFile {
 	for _, s := range Styles {
 		files[styleFile(s)] = staticFile{"ext/vendor/basecoat-" + basecoatVersion + "/" + s + ".css.gz", "text/css; charset=utf-8", true}
 	}
+	// every Lucide icon ({version, icons: {name: [svg markup, search tags]}}), for the icon picker of the builder
+	files[LucideFile] = staticFile{"ext/vendor/lucide-" + lucideVersion + "/icons.json.gz", "application/json", true}
 	files[uiJS] = staticFile{"ext/ui/gp-ui.js", "text/javascript; charset=utf-8", false}
 	files[uiCSS] = staticFile{"ext/ui/gp-ui.css", "text/css; charset=utf-8", false}
 	files[pdfJS] = staticFile{"ext/ui/gp-pdf.js", "text/javascript; charset=utf-8", false}
@@ -274,6 +276,13 @@ var staticFiles = func() map[string]staticFile {
 	files[videoCSS] = staticFile{"ext/ui/gp-video.css", "text/css; charset=utf-8", false}
 	return files
 }()
+
+// lucideVersion is the Lucide set of the icon picker (ext/vendor/lucide-*/icons.json.gz,
+// made from the lucide-static npm package: its icon-nodes.json and tags.json).
+const lucideVersion = "1.48.0"
+
+// LucideFile is its name under /p/_static/.
+const LucideFile = "lucide-" + lucideVersion + ".json"
 
 // uiJS and uiCSS are the pages script and styles of the charts and calendars
 // (named by their content: cached for a year, new names after an upgrade).

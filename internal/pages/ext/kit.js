@@ -52,8 +52,57 @@ const paths = {
     copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
 };
+// every Lucide icon, for the picker: loaded when the builder opens (cached for a year)
+const lucideURL = "/p/_static/lucide-1.48.0.json";
+let lucide = null; // {name: [svg markup, search tags]}
+let lucideLoading = null;
+/** Loads the whole Lucide set (once). */
+export function loadIcons() {
+    lucideLoading ||= fetch(lucideURL)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
+        .then((d) => (lucide = d.icons))
+        .catch((err) => {
+            lucideLoading = null; // try again at the next opening
+            console.warn("[pages] the Lucide icons couldn't load", err);
+            return null;
+        });
+    return lucideLoading;
+}
+const markup = (name) => paths[name] ?? lucide?.[name]?.[0] ?? "";
 const svg = (name, size, attrs) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${attrs}>${paths[name]}</svg>`;
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${attrs}>${markup(name)}</svg>`;
+const iconLabel = (name) => (name ? name[0].toUpperCase() + name.slice(1).replace(/-/g, " ") : "None");
+
+/** The icons matching a search: names starting with it, then names, then tags (all words). */
+function searchIcons(query, max = 300) {
+    const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const names = Object.keys(lucide || paths);
+    if (!words.length) {
+        return [];
+    }
+    const scored = [];
+    for (const n of names) {
+        const tags = lucide?.[n]?.[1] || "";
+        let score = 0;
+        for (const w of words) {
+            if (n.startsWith(w)) {
+                score += 3;
+            } else if (n.includes(w)) {
+                score += 2;
+            } else if (tags.includes(w)) {
+                score += 1;
+            } else {
+                score = 0;
+                break;
+            }
+        }
+        if (score) {
+            scored.push([score, n]);
+        }
+    }
+    scored.sort((a, b) => b[0] - a[0] || a[1].length - b[1].length || a[1].localeCompare(b[1]));
+    return scored.slice(0, max).map((s) => s[1]);
+}
 /** An inline icon (data-icon: the icon setting of buttons and badges finds it). */
 export const icon = (name, size = 16) => svg(name, size, `data-icon="${name}"`);
 
@@ -68,7 +117,7 @@ const tooltipTraits = [
     { type: "kit-attr", name: "data-side", label: "Tooltip side", options: opt([["", "Top"], "bottom", "left", "right"]) },
 ];
 const iconTraits = [
-    { type: "kit-icon", name: "gpp-icon", changeProp: true, label: "Icon", options: [{ id: "", label: "None" }, ...iconChoices.map((n) => ({ id: n, label: n[0].toUpperCase() + n.slice(1).replace(/-\d*/g, " ").trim() }))] },
+    { type: "kit-icon", name: "gpp-icon", changeProp: true, label: "Icon" },
     { type: "kit-icon-pos", name: "gpp-icon-pos", changeProp: true, label: "Icon position", options: opt([["before", "Before the text"], ["after", "After the text"]]) },
 ];
 const variantTraits = {
@@ -142,48 +191,85 @@ export function defineKitTraits(ed) {
         }
         return el;
     };
-    // icon picker: the icons shown in a grid (a select can't show them)
-    const iconLabel = (trait, v) => (trait.get("options") || []).find((o) => o.id == v)?.label || "None";
-    const showIcon = (el, trait, v) => {
+    // icon picker: a search over every Lucide icon, the popular ones first (a select can't show them)
+    loadIcons();
+    const showIcon = (el, v) => {
         el.dataset.value = v;
-        el.querySelector(".gpp-icon-current").innerHTML = (v && paths[v] ? svg(v, 16, "") : "") + `<span>${iconLabel(trait, v)}</span><i class="ri-arrow-down-s-line"></i>`;
+        el.querySelector(".gpp-icon-current").innerHTML = (v ? svg(v, 16, "") : "") + `<span>${iconLabel(v)}</span><i class="ri-arrow-down-s-line"></i>`;
         for (const b of el.querySelectorAll(".gpp-icon-grid button")) {
             b.classList.toggle("active", b.dataset.value == v);
         }
     };
+    const iconButtons = (names, value) =>
+        names.map((n) => `<button type="button" data-value="${n}" title="${iconLabel(n)}"${n == value ? ' class="active"' : ""}>${n ? svg(n, 18, "") : '<i class="ri-forbid-line"></i>'}</button>`).join("");
+    const fillGrid = (el) => {
+        const q = el.querySelector(".gpp-icon-search").value;
+        const value = el.dataset.value || "";
+        const grid = el.querySelector(".gpp-icon-grid");
+        const note = el.querySelector(".gpp-icon-note");
+        if (!q.trim()) {
+            const all = lucide ? Object.keys(lucide).filter((n) => !iconChoices.includes(n)) : [];
+            grid.innerHTML = `<div class="gpp-icon-group">Popular</div>${iconButtons(["", ...iconChoices], value)}` + (all.length ? `<div class="gpp-icon-group">All icons (${all.length + iconChoices.length})</div>${iconButtons(all, value)}` : "");
+            note.textContent = lucide ? "" : "Loading all the icons…";
+            return;
+        }
+        const found = searchIcons(q);
+        grid.innerHTML = iconButtons(found, value);
+        note.textContent = found.length ? (found.length == 300 ? "The first 300 icons: type more to narrow down." : found.length + (found.length == 1 ? " icon" : " icons")) : `No icon for "${q.trim()}". Try another word (in English).`;
+    };
     ed.Traits.addType("kit-icon", {
-        createInput({ trait }) {
+        createInput() {
             const el = document.createElement("div");
             el.className = "gpp-icon-picker";
-            const current = document.createElement("button");
-            current.type = "button";
-            current.className = "gpp-icon-current";
-            const grid = document.createElement("div");
-            grid.className = "gpp-icon-grid";
-            grid.hidden = true;
-            current.onclick = () => (grid.hidden = !grid.hidden);
-            for (const o of trait.get("options") || []) {
-                const b = document.createElement("button");
-                b.type = "button";
-                b.title = o.label;
-                b.dataset.value = o.id;
-                b.innerHTML = o.id ? svg(o.id, 18, "") : '<i class="ri-forbid-line"></i>';
-                b.onclick = () => {
-                    el.dataset.value = o.id;
-                    grid.hidden = true;
+            el.innerHTML = `<button type="button" class="gpp-icon-current"></button>
+                <div class="gpp-icon-panel" hidden>
+                    <input type="search" class="gpp-icon-search" placeholder="Search 1,800+ icons" spellcheck="false" autocomplete="off">
+                    <small class="gpp-icon-note"></small>
+                    <div class="gpp-icon-grid"></div>
+                </div>`;
+            const panel = el.querySelector(".gpp-icon-panel");
+            const search = el.querySelector(".gpp-icon-search");
+            el.querySelector(".gpp-icon-current").onclick = () => {
+                panel.hidden = !panel.hidden;
+                if (!panel.hidden) {
+                    fillGrid(el);
+                    search.focus();
+                    loadIcons().then(() => !panel.hidden && fillGrid(el));
+                }
+            };
+            let timer;
+            search.oninput = () => {
+                clearTimeout(timer);
+                timer = setTimeout(() => fillGrid(el), 120);
+            };
+            search.onkeydown = (e) => {
+                if (e.key == "Escape") {
+                    panel.hidden = true;
+                } else if (e.key == "Enter") {
+                    e.preventDefault();
+                    el.querySelector(".gpp-icon-grid button")?.click(); // the best match
+                }
+            };
+            el.querySelector(".gpp-icon-grid").onclick = (e) => {
+                const b = e.target.closest("button[data-value]");
+                if (b) {
+                    el.dataset.value = b.dataset.value;
+                    panel.hidden = true;
                     el.dispatchEvent(new Event("change", { bubbles: true }));
-                };
-                grid.append(b);
-            }
-            el.append(current, grid);
+                }
+            };
             return el;
         },
-        onEvent({ elInput, component, trait }) {
+        onEvent({ elInput, component }) {
             setIcon(component, elInput.dataset.value || "", iconAfter(component));
-            showIcon(elInput, trait, elInput.dataset.value || "");
+            showIcon(elInput, elInput.dataset.value || "");
         },
-        onUpdate({ elInput, component, trait }) {
-            showIcon(elInput, trait, iconChild(component)?.getAttributes()["data-icon"] || "");
+        onUpdate({ elInput, component }) {
+            const v = iconChild(component)?.getAttributes()["data-icon"] || "";
+            showIcon(elInput, v);
+            if (v && !markup(v)) {
+                loadIcons().then(() => showIcon(elInput, v)); // an icon of the whole set
+            }
         },
     });
     ed.Traits.addType("kit-icon-pos", {

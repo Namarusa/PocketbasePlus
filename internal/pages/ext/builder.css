@@ -169,18 +169,49 @@
 .gpp-icon-current span {
     flex: 1;
 }
+.gpp-icon-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 3px;
+}
+.gpp-icon-panel[hidden] {
+    display: none;
+}
+.gpp-icon-search {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.2);
+    color: inherit;
+    font: inherit;
+}
+.gpp-icon-search:focus {
+    outline: none;
+    border-color: var(--gjs-quaternary-color);
+}
+.gpp-icon-note:empty {
+    display: none;
+}
+.gpp-icon-note {
+    opacity: 0.7;
+}
 .gpp-icon-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
     gap: 4px;
-    padding: 6px;
-    max-height: 220px;
+    max-height: 260px;
     overflow-y: auto;
-    background: rgba(0, 0, 0, 0.25);
-    border-radius: 3px;
 }
-.gpp-icon-grid[hidden] {
-    display: none;
+.gpp-icon-group {
+    grid-column: 1 / -1;
+    margin-top: 2px;
+    font-size: 11px;
+    opacity: 0.7;
 }
 .gpp-icon-grid button {
     display: flex;
@@ -1214,4 +1245,19 @@ button.gpp-pdf-upload {
     margin: 0;
     padding: 0;
     accent-color: #3b82f6;
+}
+
+/* the icon picker takes the whole width of the panel (its label above it) */
+.gjs-trt-trait:has(.gpp-icon-picker) {
+    flex-wrap: wrap;
+}
+.gjs-trt-trait:has(.gpp-icon-picker) > .gjs-label-wrp {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-bottom: 4px;
+}
+.gjs-trt-trait:has(.gpp-icon-picker) > .gjs-field-wrp {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-left: 0;
 }

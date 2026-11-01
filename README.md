@@ -1082,8 +1082,9 @@ Pages use [Basecoat UI](https://basecoatui.com) (shadcn/ui components in plain H
 - **Components**: button (plain, with an icon before or after, icon only, all variants, button group), light / dark
   toggle, badge, alert, card, avatar, table, accordion, tabs, dialog, dropdown menu, popover, tooltip, breadcrumb,
   item list, empty state, progress, skeleton, keyboard key, separator. Select one to set its variant and size (and a
-  tooltip) in its settings; buttons and badges also get an icon (about 40 Lucide icons, inline) placed before or after
-  the text; links can point to one of your pages.
+  tooltip) in its settings; buttons and badges also get an icon placed before or after the text: the
+  popular ones first, or search the 1,854 Lucide icons by name or keyword ("cart", "truck", "invoice"; the page
+  keeps only the icons it uses, inline); links can point to one of your pages.
 - **Sections**: navbar (with a light / dark toggle), hero, features, pricing, testimonials, FAQ, call to action,
   footer, sidebar layout (Basecoat sidebar beside the content: side, open or closed on computers and phones in its
   settings, a toggle button in the top bar, the link of the current page highlighted).

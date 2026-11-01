@@ -5,11 +5,12 @@ import { api, assert, base, equal, login, until } from "../lib.mjs";
 
 export default async function ({ page, shot }) {
     const problems = [];
-    page.on("console", (m) => m.type() == "error" && problems.push(m.text()));
     // the thumbnails of the video services: served here (no internet needed, no rate limits)
     const thumb = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
     await page.context().route(/^https:\/\/(i\.ytimg\.com|www\.dailymotion\.com\/thumbnail)\//, (route) => route.fulfill({ status: 200, contentType: "image/png", body: thumb }));
     await login(page);
+    // after the sign in (its retries when PocketBase limits the sign ins log errors)
+    page.on("console", (m) => m.type() == "error" && problems.push(m.text()));
     const rec = await api("/api/collections/pages/records", {
         method: "POST",
         body: { title: "Watch", slug: "watch", published: true, html: `<section id="s" style="padding:24px;min-height:120px"><h1>Watch</h1></section>` },
