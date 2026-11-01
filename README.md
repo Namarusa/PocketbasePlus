@@ -74,6 +74,8 @@ up SMTP in Settings → Mail settings.
 
 Stop the server, replace the binary (or pull the new image) and start it again: the database is migrated on start.
 Back up `pb_data` first (Settings → Backups, or a copy of the folder while the server is stopped).
+The running release shows at the bottom of the dashboard, next to the PocketBase version (also
+`pocketbaseplus --version` and `GET /api/gp/version`; a build from the sources says `dev` and its commit).
 
 - **0.3.0**: the API keys of the AI providers and the secrets of the APIs move to [Settings → Secrets](#secrets)
   (named `AI_…` and `API_…`), and the fields keep a `{{secret.NAME}}` reference. Set `POCKETBASEPLUS_ENCRYPTION_KEY`

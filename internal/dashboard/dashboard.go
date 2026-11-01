@@ -13,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Namarusa/PocketbasePlus/internal/deploy"
 	"github.com/Namarusa/PocketbasePlus/internal/formula"
 	"github.com/Namarusa/PocketbasePlus/internal/offline"
 )
@@ -50,6 +51,11 @@ func Register(app core.App) {
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.UIExtensions = append(se.UIExtensions, core.UIExtension{Name: Name, FS: files})
+
+		// the release (the dashboard footer; PocketBase shows its own version there too)
+		se.Router.GET("/api/gp/version", func(e *core.RequestEvent) error {
+			return e.JSON(200, map[string]any{"version": deploy.VersionString(), "pocketbase": deploy.PocketBaseVersion()})
+		})
 
 		// the functions of the templates and formulas, for the pickers
 		se.Router.GET("/api/gp/functions", func(e *core.RequestEvent) error {

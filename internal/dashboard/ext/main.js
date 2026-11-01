@@ -54,6 +54,21 @@ gpHeaderLinks?.splice(
     },
 );
 
+// the release, in the footer next to the PocketBase version
+fetch(app.pb.buildURL("/api/gp/version"))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((v) => {
+        const links = app.store?.creditLinks;
+        if (!v?.version || !Array.isArray(links)) {
+            return gpWarn("app.store.creditLinks (version link)");
+        }
+        app.store.creditLinks = [
+            ...links,
+            { href: "https://github.com/Namarusa/PocketbasePlus/releases", icon: "ri-rocket-line", label: "PocketBasePlus " + v.version },
+        ];
+    })
+    .catch(() => {});
+
 // Settings → AI (a group of the native settings sidebar, after "System")
 const gpSettingsGroups = app.store?.settingsNavGroups;
 if (gpSettingsGroups && typeof gpSettingsGroups == "object") {

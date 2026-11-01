@@ -45,6 +45,9 @@ func main() {
 		DefaultEncryptionEnv: deploy.EncryptionKeyEnv,
 	})
 
+	// pocketbaseplus --version
+	app.RootCmd.Version = deploy.VersionString() + " (PocketBase " + deploy.PocketBaseVersion() + ")"
+
 	// in Docker: give the data folder to PUID/PGID and stop being root,
 	// before anything opens the database
 	if err := deploy.DropPrivileges(app.DataDir()); err != nil {

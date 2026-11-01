@@ -8,13 +8,13 @@
 # Settings are environment variables (see the README, "Docker").
 
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
-ARG TARGETOS TARGETARCH TARGETVARIANT
+ARG TARGETOS TARGETARCH TARGETVARIANT VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN if [ "$TARGETARCH" = arm ]; then export GOARM=${TARGETVARIANT#v}; fi; \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w" -o /out/pocketbaseplus . \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X github.com/Namarusa/PocketbasePlus/internal/deploy.Version=$VERSION" -o /out/pocketbaseplus . \
     && mkdir -p /out/pb_data
 
 FROM gcr.io/distroless/static-debian12

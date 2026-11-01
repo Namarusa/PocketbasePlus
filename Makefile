@@ -1,7 +1,7 @@
 .PHONY: dev build build-windows release test e2e
 
 VERSION ?= dev
-LDFLAGS := -s -w
+LDFLAGS := -s -w -X github.com/Namarusa/PocketbasePlus/internal/deploy.Version=$(VERSION)
 PLATFORMS := linux/amd64 linux/arm64 linux/arm windows/amd64 darwin/amd64 darwin/arm64
 
 # PocketBase + dashboard on http://127.0.0.1:8090/_/
