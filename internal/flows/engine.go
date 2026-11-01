@@ -41,6 +41,9 @@ const (
 	maxLogValueBytes = 8000 // per step input/output stored in the run log
 	syncTimeout      = 15 * time.Second
 	asyncTimeout     = 15 * time.Minute
+
+	maxLoopItems    = 100_000 // the most items a For each goes through
+	loggedLoopItems = 20      // the iterations whose steps are all logged (then only the failures)
 )
 
 // Step is one flow step. Condition steps use Then/Else, loops use Steps.
@@ -122,6 +125,10 @@ type run struct {
 	data   map[string]any
 	logs   []StepLog
 	depth  int // nesting level of the current step list
+	// the time limit of the run (for the messages)
+	timeout time.Duration
+	// > 0: inside loop iterations past loggedLoopItems, only the failures are logged
+	quiet int
 
 	// before record flows: the record being saved (can be modified)
 	triggerRecord *core.Record
@@ -244,6 +251,7 @@ func (e *Engine) Run(flow *core.Record, trigger map[string]any, opts RunOptions)
 		action:        opts.action,
 		caller:        opts.caller,
 		respond:       opts.respond,
+		timeout:       timeout,
 		data: map[string]any{
 			"trigger": toPlain(trigger),
 			"steps":   map[string]any{},
@@ -372,7 +380,7 @@ func (e *Engine) RunAsync(flow *core.Record, trigger map[string]any, ctx context
 func (r *run) runSteps(steps []Step) error {
 	for _, s := range steps {
 		if err := r.ctx.Err(); err != nil {
-			return fmt.Errorf("flow timeout or cancelled: %w", err)
+			return r.stopped(err)
 		}
 		if s.Disabled {
 			continue
@@ -404,6 +412,9 @@ func (r *run) runStep(s Step) error {
 	r.logs = append(r.logs, entry)
 
 	input, output, err := handler(r, s)
+	if err != nil && !errors.As(err, new(*timeLimitError)) && errors.Is(r.ctx.Err(), context.DeadlineExceeded) {
+		err = r.stopped(r.ctx.Err()) // a request cut by the time limit: say so
+	}
 	if len(r.secrets) > 0 {
 		input = secrets.MaskValue(toPlain(input), r.secrets)
 		output = secrets.MaskValue(toPlain(output), r.secrets)
@@ -428,6 +439,9 @@ func (r *run) runStep(s Step) error {
 		entry.Error = err.Error()
 	}
 	r.logs[logIndex] = entry
+	if r.quiet > 0 && entry.Status != StatusFailed && !failedSince(r.logs[logIndex+1:]) {
+		r.logs = r.logs[:logIndex] // a long loop: its successful steps aren't kept
+	}
 
 	// expose the output to the next steps
 	plain := toPlain(output)
@@ -441,6 +455,35 @@ func (r *run) runStep(s Step) error {
 		return nil
 	}
 	return err
+}
+
+// stopped explains why the run stopped before its end.
+func (r *run) stopped(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &timeLimitError{fmt.Sprintf("the flow reached its time limit (%s) and was stopped", fmtDuration(r.timeout))}
+	}
+	return fmt.Errorf("the flow was cancelled: %w", err)
+}
+
+// timeLimitError: the run was stopped by its time limit (explained once).
+type timeLimitError struct{ msg string }
+
+func (e *timeLimitError) Error() string { return e.msg }
+
+func fmtDuration(d time.Duration) string {
+	if d >= time.Minute && d%time.Minute == 0 {
+		return fmt.Sprintf("%d minutes", int(d/time.Minute))
+	}
+	return fmt.Sprintf("%d seconds", int(d/time.Second))
+}
+
+func failedSince(logs []StepLog) bool {
+	for _, l := range logs {
+		if l.Status == StatusFailed {
+			return true
+		}
+	}
+	return false
 }
 
 // runNested executes a nested step list (branch or loop body).

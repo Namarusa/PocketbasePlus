@@ -228,12 +228,17 @@ func stepLoop(r *run, s Step) (any, any, error) {
 			return items, nil, fmt.Errorf("items must be a list, got %T", items)
 		}
 	}
-	max := asInt(s.Config, "max", 1000)
-	if max <= 0 || max > 10000 {
-		max = 10000
+	max := asInt(s.Config, "max", 0)
+	if max <= 0 || max > maxLoopItems {
+		max = maxLoopItems
 	}
 	if len(list) > max {
-		list = list[:max]
+		// never cut a list without saying it: the items left out would be lost
+		why := "the Max iterations of this step"
+		if max == maxLoopItems {
+			why = "the most a For each can go through"
+		}
+		return map[string]any{"count": len(list)}, nil, fmt.Errorf("the list has %s items, more than %s (%s): raise Max iterations, or fetch the items in smaller pages (an API page or a Get records limit per run)", fmtCount(len(list)), fmtCount(max), why)
 	}
 
 	r.sample.loop(s.Key, list)
@@ -243,14 +248,39 @@ func stepLoop(r *run, s Step) (any, any, error) {
 		r.data["item"], r.data["index"] = prevItem, prevIndex
 	}()
 
+	out := map[string]any{"count": len(list)}
+	if len(list) > loggedLoopItems {
+		out["logged"] = fmt.Sprintf("the steps of the first %d items (then only the failures)", loggedLoopItems)
+	}
 	for i, item := range list {
 		r.data["item"] = item
 		r.data["index"] = i
-		if err := r.runNested(s.Steps); err != nil {
-			return map[string]any{"count": len(list)}, map[string]any{"count": len(list), "failedAt": i}, err
+		quiet := i >= loggedLoopItems
+		if quiet {
+			r.quiet++
+		}
+		err := r.runNested(s.Steps)
+		if quiet {
+			r.quiet--
+		}
+		if err != nil {
+			failed := map[string]any{"count": len(list), "done": i, "failedAt": i}
+			if errors.Is(r.ctx.Err(), context.DeadlineExceeded) {
+				return out, failed, &timeLimitError{fmt.Sprintf("the flow reached its time limit (%s) at item %s of %s: %s items were done, the others weren't. Split the list into smaller runs (a page of items per run, or a schedule that picks up the rest)", fmtDuration(r.timeout), fmtCount(i+1), fmtCount(len(list)), fmtCount(i))}
+			}
+			return out, failed, err
 		}
 	}
-	return map[string]any{"count": len(list)}, map[string]any{"count": len(list)}, nil
+	return out, out, nil
+}
+
+// fmtCount writes 12345 as "12,345".
+func fmtCount(n int) string {
+	s := strconv.Itoa(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
 }
 
 func stepStop(r *run, s Step) (any, any, error) {

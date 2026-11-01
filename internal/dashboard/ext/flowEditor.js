@@ -43,7 +43,7 @@ function defaultConfig(type) {
         case "condition":
             return { match: "all", rules: [{ id: randomId(), left: "", op: "eq", right: "" }] };
         case "loop":
-            return { items: "", max: 1000 };
+            return { items: "", max: "" };
         case "delay":
             return { seconds: 10 };
         case "stop":
@@ -2627,7 +2627,7 @@ export function pageFlowEditor(route) {
                         { label: "Items (a list)", hint: `The records of a "Get records" step, a list of an API response... Inside the loop, pick the fields of "current item". Run a test to list the lists of the responses.` },
                         choiceExpr(c, "items", sid, { options: () => listOptions(sid), placeholder: "{{steps.records.items}}", emptyLabel: "- Choose a list -" }),
                     ),
-                    field({ label: "Max iterations" }, numberInput(c, "max", { min: 1, max: 10000 })),
+                    field({ label: "Max iterations", hint: "Empty: up to 100,000 items. A longer list fails the step with a message instead of being cut. The flow stops at its time limit (15 minutes in the background), so split very long lists into pages." }, numberInput(c, "max", { min: 1, max: 100000, placeholder: "100,000" })),
                     t.div({ className: "gp-branch loop" }, t.div({ className: "gp-branch-title" }, t.i({ className: "ri-repeat-line" }), "For each item"), stepList(s, "steps")),
                 ];
             case "delay":

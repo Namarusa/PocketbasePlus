@@ -2,9 +2,11 @@ package flows_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -408,5 +410,57 @@ func TestDateFieldValues(t *testing.T) {
 		if got := recs[0].GetDateTime("starts").String(); got != want {
 			t.Errorf("%s: stored %q, want %q", value, got, want)
 		}
+	}
+}
+
+func TestLoopLimits(t *testing.T) {
+	f := setup(t)
+	items := make([]any, 30)
+	for i := range items {
+		items[i] = map[string]any{"n": i}
+	}
+	loop := func(max any, steps ...map[string]any) *core.Record {
+		return f.flow(t, "manual", map[string]any{}, []map[string]any{
+			{"key": "each", "type": "loop", "config": map[string]any{"items": "{{.trigger.payload.items}}", "max": max}, "steps": steps},
+		})
+	}
+	script := map[string]any{"key": "s", "type": "script", "config": map[string]any{"code": "return data.item.n"}}
+
+	// no max: every item; the run log keeps the steps of the first 20 only
+	res := f.engine.Run(loop("", script), map[string]any{"payload": map[string]any{"items": items}}, flows.RunOptions{})
+	if res.Status != flows.StatusSuccess || res.Output.(map[string]any)["count"] != 30.0 {
+		t.Fatalf("run: %s %#v", res.Error, res.Output)
+	}
+	rec, err := f.app.FindRecordById("flow_runs", res.RunId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs []flows.StepLog
+	if err := json.Unmarshal([]byte(rec.GetString("steps")), &logs); err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 21 {
+		t.Fatalf("expected the loop and 20 logged iterations, got %d entries", len(logs))
+	}
+
+	// a failure after the 20th item is still logged
+	failing := map[string]any{"key": "s", "type": "script", "config": map[string]any{"code": "if (data.item.n == 25) throw new Error('bad item'); return 1"}}
+	res = f.engine.Run(loop("", failing), map[string]any{"payload": map[string]any{"items": items}}, flows.RunOptions{})
+	rec, _ = f.app.FindRecordById("flow_runs", res.RunId)
+	if res.Status != flows.StatusFailed || !strings.Contains(rec.GetString("steps"), "bad item") {
+		t.Fatalf("the failure of item 25: %s %s", res.Error, rec.GetString("steps"))
+	}
+
+	// more items than the max: an error, not a cut list
+	res = f.engine.Run(loop(10, script), map[string]any{"payload": map[string]any{"items": items}}, flows.RunOptions{})
+	if res.Status != flows.StatusFailed || !strings.Contains(res.Error, "the list has 30 items, more than 10") {
+		t.Fatalf("over the max: %s %s", res.Status, res.Error)
+	}
+
+	// the time limit: where the loop stopped
+	wait := map[string]any{"key": "w", "type": "delay", "config": map[string]any{"seconds": 1}}
+	res = f.engine.Run(loop("", wait), map[string]any{"payload": map[string]any{"items": items[:5]}}, flows.RunOptions{Timeout: 2 * time.Second})
+	if res.Status != flows.StatusFailed || !regexp.MustCompile(`time limit \(2 seconds\) at item \d of 5: \d items were done`).MatchString(res.Error) {
+		t.Fatalf("time limit: %s %s", res.Status, res.Error)
 	}
 }
