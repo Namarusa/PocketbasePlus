@@ -268,6 +268,8 @@ var staticFiles = func() map[string]staticFile {
 	}
 	// every Lucide icon ({version, icons: {name: [svg markup, search tags]}}), for the icon picker of the builder
 	files[LucideFile] = staticFile{"ext/vendor/lucide-" + lucideVersion + "/icons.json.gz", "application/json", true}
+	// the image of the section templates, until one of the Assets replaces it
+	files["placeholder.svg"] = staticFile{"ext/ui/placeholder.svg", "image/svg+xml", false}
 	files[uiJS] = staticFile{"ext/ui/gp-ui.js", "text/javascript; charset=utf-8", false}
 	files[uiCSS] = staticFile{"ext/ui/gp-ui.css", "text/css; charset=utf-8", false}
 	files[pdfJS] = staticFile{"ext/ui/gp-pdf.js", "text/javascript; charset=utf-8", false}

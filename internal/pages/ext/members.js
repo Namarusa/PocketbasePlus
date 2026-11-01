@@ -146,9 +146,23 @@ export function addVisibleTrait(comp) {
     }
 }
 
+// the text of a button: its text parts (an icon of the kit is a separate part)
+const textParts = (comp) => comp.components().filter((c) => c.get("type") == "textnode");
+const buttonText = (comp) => (textParts(comp).length ? textParts(comp).map((c) => c.get("content")).join("") : comp.components().length ? "" : comp.get("content") || "").trim();
+function setButtonText(comp, text) {
+    const kids = comp.components();
+    const iconFirst = kids.length > 0 && kids.at(0).getAttributes?.()["data-icon"] !== undefined;
+    textParts(comp).forEach((c) => c.remove());
+    comp.set("content", "");
+    text = text.trim();
+    if (text) {
+        kids.add({ type: "textnode", content: text }, { at: iconFirst ? kids.length : 0 });
+    }
+}
+
 /** Refreshes the options of the member settings of a selected component. */
 export function refreshMemberTraits(comp) {
-    comp?.getTrait?.("data-pb-action")?.set("options", flowOptions());
+    comp?.getTrait?.("data-pb-action")?.set("options", flowOptions()); // forms and action buttons
     comp?.getTrait?.("data-pb-user")?.set("options", userFieldOptions());
 }
 
@@ -156,13 +170,44 @@ export function defineMemberTypes(ed) {
     visibleTrait(ed);
     const dc = ed.DomComponents;
     const has = (el, attr) => el?.nodeType == 1 && el.hasAttribute(attr);
+    // buttons: their label in the settings (a <button> can't be edited in the canvas:
+    // browsers swallow the spaces typed in it); an icon of the kit stays in place
+    const isButton = (el) => el?.nodeType == 1 && el.tagName == "BUTTON";
+    const labelTrait = { type: "gpp-label", name: "gpp-label", label: "Text", changeProp: true };
+    ed.Traits.addType("gpp-label", {
+        createInput() {
+            const el = document.createElement("input");
+            el.type = "text";
+            el.placeholder = "The text of the button";
+            return el;
+        },
+        onEvent({ elInput, component }) {
+            setButtonText(component, elInput.value);
+        },
+        onUpdate({ elInput, component }) {
+            if (elInput.ownerDocument.activeElement !== elInput) {
+                elInput.value = buttonText(component);
+            }
+        },
+    });
+    dc.addType("gpp-button", {
+        isComponent: (el) => isButton(el),
+        model: { defaults: { name: "Button", icon: '<i class="ri-checkbox-blank-line"></i>', traits: [labelTrait] } },
+    });
+    const flowTrait = { type: "select", name: "data-pb-action", label: "Flow", options: [] };
     dc.addType("pb-action", {
         isComponent: (el) => has(el, "data-pb-action"),
         model: {
             defaults: {
                 name: "Page action",
                 icon: '<i class="ri-flashlight-line"></i>',
-                traits: [{ type: "select", name: "data-pb-action", label: "Flow", options: [] }],
+                traits: [flowTrait],
+            },
+            init() {
+                if (this.get("tagName") == "button" && !this.getTrait("gpp-label")) {
+                    this.set("name", "Action button");
+                    this.addTrait(labelTrait, { at: 0 });
+                }
             },
         },
     });
@@ -172,7 +217,7 @@ export function defineMemberTypes(ed) {
             defaults: {
                 name: "Sign out",
                 icon: '<i class="ri-logout-box-r-line"></i>',
-                traits: [{ type: "text", name: "data-pb-logout", label: "Then open", placeholder: "/" }],
+                traits: [labelTrait, { type: "text", name: "data-pb-logout", label: "Then open", placeholder: "/" }],
             },
         },
     });

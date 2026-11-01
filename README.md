@@ -1085,8 +1085,10 @@ Pages use [Basecoat UI](https://basecoatui.com) (shadcn/ui components in plain H
   tooltip) in its settings; buttons and badges also get an icon placed before or after the text: the
   popular ones first, or search the 1,854 Lucide icons by name or keyword ("cart", "truck", "invoice"; the page
   keeps only the icons it uses, inline); links can point to one of your pages.
-- **Sections**: navbar (with a light / dark toggle), hero, features, pricing, testimonials, FAQ, call to action,
-  footer, sidebar layout (Basecoat sidebar beside the content: side, open or closed on computers and phones in its
+- **Sections**: navbar (with a light / dark toggle), announcement bar, hero, hero with image, logos, numbers,
+  features, feature list, feature with image, how it works, pricing, testimonials, team, gallery, articles, text
+  content, FAQ, call to action, contact (details and a form: pick its flow in the settings), newsletter, footer,
+  footer with columns (their images are placeholders: Settings → Change image picks one of the Assets), sidebar layout (Basecoat sidebar beside the content: side, open or closed on computers and phones in its
   settings, a toggle button in the top bar, the link of the current page highlighted).
 - **Data**: record cards, record table, record FAQ, record items and avatar field, bound to a collection like the
   collection list.

@@ -440,6 +440,76 @@ ${buttonHTML("Start now " + icon("arrow"), "secondary", ' data-size="lg"')}</div
 <span>© 2026 Brand. All rights reserved.</span><nav style="display:flex;gap:16px"><a href="#" style="color:inherit">Privacy</a><a href="#" style="color:inherit">Terms</a><a href="#" style="color:inherit">Contact</a></nav></div></footer>`,
 };
 
+// --- more sections -----------------------------------------------------------------------------
+
+// an image to replace (Settings → Change image: an image of the Assets)
+const placeholder = (alt, ratio = "4/3", extra = "") => `<img src="/p/_static/placeholder.svg" alt="${alt}" style="display:block;width:100%;height:auto;aspect-ratio:${ratio};object-fit:cover;border-radius:var(--radius)${extra}">`;
+const heading = (title, text, align = "center") => `<div style="text-align:${align};margin-bottom:40px${align == "center" ? ";max-width:680px;margin-left:auto;margin-right:auto" : ""}"><h2 style="margin:0 0 10px;font-size:34px;font-weight:700;letter-spacing:-0.02em">${title}</h2><p style="margin:0;${muted};font-size:17px">${text}</p></div>`;
+const checkItem = (text) => `<li style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--primary);display:flex;margin-top:3px">${icon("check")}</span><span>${text}</span></li>`;
+const checkList = (items) => `<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px">${items.map(checkItem).join("")}</ul>`;
+const field = (type, name, label, extra = "") =>
+    `<div style="display:grid;gap:6px"><label class="label" data-kit-ref="for:${name}">${label}</label>${type == "textarea" ? `<textarea class="textarea" data-kit-id="${name}" name="${name}" rows="4" ${extra}></textarea>` : `<input class="input" type="${type}" data-kit-id="${name}" name="${name}" ${extra}>`}</div>`;
+const step = (n, title, text) => `<div style="display:flex;flex-direction:column;gap:10px"><span style="width:40px;height:40px;border-radius:999px;background:var(--primary);color:var(--primary-foreground);display:flex;align-items:center;justify-content:center;font-weight:700">${n}</span>
+<h3 style="margin:0;font-size:18px;font-weight:600">${title}</h3><p style="margin:0;${muted}">${text}</p></div>`;
+const member = (name, role, initials) => `<div class="card" style="padding:24px;gap:12px;align-items:center;text-align:center"><span class="avatar" data-size="lg"><span>${initials}</span></span>
+<div><strong style="display:block">${name}</strong><span style="${muted};font-size:14px">${role}</span></div></div>`;
+const article = (title, date, text) => `<article class="card" style="padding:0;gap:0;overflow:hidden">${placeholder(title, "16/9", ";border-radius:0")}
+<div style="padding:20px;display:flex;flex-direction:column;gap:8px"><span style="${muted};font-size:13px">${date}</span><h3 style="margin:0;font-size:18px;font-weight:600">${title}</h3><p style="margin:0;${muted}">${text}</p>
+<a href="#" class="btn" data-variant="link" style="padding:0;align-self:flex-start">Read more ${icon("arrow-right")}</a></div></article>`;
+const footerCol = (title, links) => `<div style="display:flex;flex-direction:column;gap:10px"><strong style="font-size:14px">${title}</strong>${links.map((l) => `<a href="#" style="color:inherit;${muted};text-decoration:none;font-size:14px">${l}</a>`).join("")}</div>`;
+const contactLine = (ic, title, text) => `<div style="display:flex;gap:12px;align-items:flex-start"><span style="width:40px;height:40px;flex:none;border-radius:var(--radius);background:var(--muted);display:flex;align-items:center;justify-content:center">${icon(ic)}</span><div><strong style="display:block">${title}</strong><span style="${muted}">${text}</span></div></div>`;
+
+export const moreSections = {
+    banner: `<div style="background:var(--primary);color:var(--primary-foreground);font-size:14px"><div style="${container};display:flex;align-items:center;justify-content:center;gap:10px;padding-top:10px;padding-bottom:10px;flex-wrap:wrap;text-align:center">
+<span>${icon("sparkles", 14)}</span><span>Spring sale: 20% off every plan until Sunday.</span><a href="#" style="color:inherit;font-weight:600">Learn more →</a></div></div>`,
+    "hero-split": `<section style="padding:80px 0"><div style="${container};display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:48px;align-items:center">
+<div style="display:flex;flex-direction:column;gap:20px;align-items:flex-start"><span class="badge" data-variant="secondary">${icon("sparkles", 12)} New</span>
+<h1 style="margin:0;font-size:48px;line-height:1.05;font-weight:700;letter-spacing:-0.03em">Everything your team needs, in one place</h1>
+<p style="margin:0;font-size:18px;${muted}">A short sentence that explains what you offer and why it matters to the people reading this page.</p>
+<div style="display:flex;gap:10px;flex-wrap:wrap">${buttonHTML("Get started " + icon("arrow"), "", ' data-size="lg"')}${buttonHTML("See a demo", "outline", ' data-size="lg"')}</div></div>
+${placeholder("The product", "4/3")}</div></section>`,
+    logos: `<section style="padding:48px 0"><div style="${container};display:flex;flex-direction:column;align-items:center;gap:24px">
+<p style="margin:0;${muted};font-size:14px;text-transform:uppercase;letter-spacing:.08em">Trusted by teams at</p>
+<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:16px 48px;${muted};font-size:20px;font-weight:700">${[["zap", "Bolt"], ["shield", "Sentinel"], ["rocket", "Orbit"], ["heart", "Kindly"], ["star", "Northstar"]].map(([ic, n]) => `<span style="display:flex;align-items:center;gap:8px">${icon(ic, 20)}${n}</span>`).join("")}</div></div></section>`,
+    stats: `<section style="padding:64px 0"><div style="${container}">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:20px">${[["10k+", "Customers"], ["99.9%", "Uptime"], ["24/7", "Support"], ["4.9/5", "Average rating"]].map(([v, k]) => `<div class="card" style="padding:24px;gap:4px;text-align:center"><p style="margin:0;font-size:36px;font-weight:700;letter-spacing:-0.02em">${v}</p><p style="margin:0;${muted}">${k}</p></div>`).join("")}</div></div></section>`,
+    "feature-split": `<section style="padding:72px 0"><div style="${container};display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:48px;align-items:center">
+${placeholder("The feature", "4/3")}
+<div style="display:flex;flex-direction:column;gap:16px;align-items:flex-start"><span class="badge" data-variant="outline">Feature</span><h2 style="margin:0;font-size:34px;font-weight:700;letter-spacing:-0.02em">Explain one feature in depth</h2>
+<p style="margin:0;${muted};font-size:17px">Describe the problem it solves and how people use it day to day.</p>
+${checkList(["A first benefit, in a few words", "A second benefit", "A third benefit"])}
+${buttonHTML("Learn more " + icon("arrow-right"), "outline")}</div></div></section>`,
+    "features-grid": `<section style="padding:72px 0"><div style="${container}">${heading("Packed with features", "Everything you need to get the job done.")}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:32px 24px">${[["zap", "Fast", "Pages load instantly."], ["shield", "Secure", "Your data stays yours."], ["sparkles", "Smart", "Helpful suggestions as you go."], ["user", "Personal", "Every visitor sees their own content."], ["mail", "Connected", "Emails sent at the right moment."], ["settings", "Flexible", "Adapt it to the way you work."]]
+    .map(([ic, t, d]) => `<div style="display:flex;gap:14px;align-items:flex-start"><span style="width:40px;height:40px;flex:none;border-radius:var(--radius);background:var(--muted);display:flex;align-items:center;justify-content:center">${icon(ic, 20)}</span><div><h3 style="margin:0 0 4px;font-size:17px;font-weight:600">${t}</h3><p style="margin:0;${muted}">${d}</p></div></div>`)
+    .join("")}</div></div></section>`,
+    steps: `<section style="padding:72px 0;background:var(--muted)"><div style="${container}">${heading("How it works", "Three simple steps to get started.")}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:32px">${step(1, "Sign up", "Create your account in less than a minute.")}${step(2, "Set it up", "Add your content and choose your options.")}${step(3, "Go live", "Share it with the world and watch it grow.")}</div></div></section>`,
+    team: `<section style="padding:72px 0"><div style="${container}">${heading("Meet the team", "The people behind the product.")}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:20px">${member("Alex Martin", "Founder & CEO", "AM")}${member("Sam Lee", "Design", "SL")}${member("Jo Rivera", "Engineering", "JR")}${member("Kim Dupont", "Customer success", "KD")}</div></div></section>`,
+    gallery: `<section style="padding:72px 0"><div style="${container}">${heading("Gallery", "A few pictures of our work.")}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:16px">${[1, 2, 3, 4, 5, 6].map((n) => placeholder("Picture " + n, "1/1")).join("")}</div></div></section>`,
+    articles: `<section style="padding:72px 0"><div style="${container}">${heading("Latest news", "Stories, guides and updates.")}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:20px">${article("Getting started in five minutes", "March 4, 2026", "A quick tour of the essentials.")}${article("What's new this spring", "February 18, 2026", "The latest improvements, explained.")}${article("How our customers use it", "January 30, 2026", "Three stories from the field.")}</div></div></section>`,
+    content: `<section style="padding:72px 0"><div style="max-width:720px;margin:0 auto;padding:0 24px;display:flex;flex-direction:column;gap:18px;font-size:17px;line-height:1.7">
+<span class="badge" data-variant="secondary" style="align-self:flex-start">About us</span><h2 style="margin:0;font-size:38px;line-height:1.15;font-weight:700;letter-spacing:-0.02em">Our story</h2>
+<p style="margin:0">Tell your story here: where you started, what you care about and where you are going. Keep paragraphs short so they are easy to read.</p>
+<blockquote style="margin:0;padding:4px 0 4px 20px;border-left:3px solid var(--primary);font-size:20px;font-style:italic">"A quote that sums up your mission."</blockquote>
+<p style="margin:0">Add a second paragraph with more details, then a call to action or a link to learn more.</p></div></section>`,
+    contact: `<section style="padding:72px 0"><div style="${container};display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:48px;align-items:start">
+<div style="display:flex;flex-direction:column;gap:20px"><h2 style="margin:0;font-size:34px;font-weight:700;letter-spacing:-0.02em">Get in touch</h2><p style="margin:0;${muted};font-size:17px">We usually answer within one business day.</p>
+${contactLine("mail", "Email", "hello@example.com")}${contactLine("phone", "Phone", "+1 555 010 0000")}${contactLine("map-pin", "Office", "12 Main Street, Springfield")}</div>
+<div class="card" style="padding:24px"><div data-pb-message></div><form data-pb-action="" class="form" style="display:grid;gap:16px">${field("text", "name", "Name", 'required autocomplete="name"')}${field("email", "email", "Email", 'required autocomplete="email"')}${field("textarea", "message", "Message", "required")}<button type="submit" class="btn">Send the message</button></form></div></div></section>`,
+    newsletter: `<section style="padding:72px 0"><div style="${container}"><div class="card" style="padding:40px 32px;gap:16px;align-items:center;text-align:center">
+<h2 style="margin:0;font-size:30px;font-weight:700;letter-spacing:-0.02em">Stay in the loop</h2><p style="margin:0;${muted};font-size:17px">News and tips once a month. No spam, unsubscribe anytime.</p>
+<div data-pb-message></div><form data-pb-action="" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;width:100%;max-width:440px"><input class="input" type="email" name="email" placeholder="you@example.com" aria-label="Email" required autocomplete="email" style="flex:1 1 220px;min-width:0"><button type="submit" class="btn">Subscribe</button></form></div></div></section>`,
+    "footer-columns": `<footer style="border-top:1px solid var(--border);padding:56px 0 32px"><div style="${container};display:flex;flex-direction:column;gap:40px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:32px">
+<div style="display:flex;flex-direction:column;gap:10px;grid-column:span 2;min-width:0"><a href="/" style="font-weight:700;font-size:18px;color:inherit;text-decoration:none;display:flex;align-items:center;gap:8px">${icon("sparkles", 20)}Brand</a><p style="margin:0;${muted};font-size:14px;max-width:320px">One sentence about what you do and who it is for.</p></div>
+${footerCol("Product", ["Features", "Pricing", "Changelog"])}${footerCol("Company", ["About", "Blog", "Careers"])}${footerCol("Help", ["Contact", "Privacy", "Terms"])}</div>
+<div style="border-top:1px solid var(--border);padding-top:24px;${muted};font-size:14px">© 2026 Brand. All rights reserved.</div></div></footer>`,
+};
+
 const sidebarLink = (ic, label, href = "#") => `<li><a href="${href}">${icon(ic)}<span>${label}</span></a></li>`;
 
 const sidebarAside = `<aside class="sidebar" data-kit-id="sidebar"><nav aria-label="Sidebar navigation">
@@ -555,13 +625,27 @@ const blockList = [
     ["Components", "kit-kbd", "Keyboard key", "ri-keyboard-line", components.kbd],
     ["Components", "kit-separator", "Separator", "ri-separator", components.separator],
     ["Sections", "kit-navbar", "Navbar", "ri-layout-top-2-line", sections.navbar],
+    ["Sections", "kit-banner", "Announcement bar", "ri-notification-badge-line", moreSections.banner],
     ["Sections", "kit-hero", "Hero", "ri-layout-top-line", sections.hero],
+    ["Sections", "kit-hero-split", "Hero with image", "ri-layout-column-line", moreSections["hero-split"]],
+    ["Sections", "kit-logos", "Logos", "ri-building-line", moreSections.logos],
+    ["Sections", "kit-stats", "Numbers", "ri-bar-chart-line", moreSections.stats],
     ["Sections", "kit-features", "Features", "ri-layout-grid-line", sections.features],
+    ["Sections", "kit-features-grid", "Feature list", "ri-apps-line", moreSections["features-grid"]],
+    ["Sections", "kit-feature-split", "Feature with image", "ri-layout-left-2-line", moreSections["feature-split"]],
+    ["Sections", "kit-steps", "How it works", "ri-list-ordered", moreSections.steps],
     ["Sections", "kit-pricing", "Pricing", "ri-price-tag-line", sections.pricing],
     ["Sections", "kit-testimonials", "Testimonials", "ri-chat-quote-line", sections.testimonials],
+    ["Sections", "kit-team", "Team", "ri-team-line", moreSections.team],
+    ["Sections", "kit-gallery", "Gallery", "ri-gallery-line", moreSections.gallery],
+    ["Sections", "kit-articles", "Articles", "ri-article-line", moreSections.articles],
+    ["Sections", "kit-content", "Text content", "ri-file-text-line", moreSections.content],
     ["Sections", "kit-faq", "FAQ", "ri-question-answer-line", sections.faq],
     ["Sections", "kit-cta", "Call to action", "ri-megaphone-line", sections.cta],
+    ["Sections", "kit-contact", "Contact", "ri-contacts-line", moreSections.contact],
+    ["Sections", "kit-newsletter", "Newsletter", "ri-mail-add-line", moreSections.newsletter],
     ["Sections", "kit-footer", "Footer", "ri-layout-bottom-line", sections.footer],
+    ["Sections", "kit-footer-columns", "Footer with columns", "ri-layout-bottom-2-line", moreSections["footer-columns"]],
     ["Sections", "kit-sidebar", "Sidebar layout", "ri-layout-left-line", sidebarLayout("Dashboard", sidebarContent)],
     ["Data", "kit-record-cards", "Record cards", "ri-gallery-view-2", dataBlocks["record-cards"]],
     ["Data", "kit-record-table", "Record table", "ri-table-2", dataBlocks["record-table"]],
