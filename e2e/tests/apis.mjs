@@ -89,6 +89,7 @@ export default async function ({ page, shot }) {
         await page.locator(".gp-api-apivars button", { hasText: "API settings" }).click();
         const base = page.locator("input#base_url");
         await base.waitFor();
+        await until(async () => (await base.inputValue()) == "http://{{host}}/v2", { message: "the API base loaded" }); // else typed before it
         await base.press("End");
         await base.pressSequentially("/{{ver");
         await page.locator(".gp-varmenu-item", { hasText: "New variable" }).click();

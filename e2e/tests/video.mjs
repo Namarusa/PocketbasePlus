@@ -5,7 +5,10 @@ import { api, assert, base, equal, login, until } from "../lib.mjs";
 
 export default async function ({ page, shot }) {
     const problems = [];
-    page.on("console", (m) => m.type() == "error" && !/ytimg|youtube|ERR_|net::/.test(m.text()) && problems.push(m.text()));
+    page.on("console", (m) => m.type() == "error" && problems.push(m.text()));
+    // the thumbnails of the video services: served here (no internet needed, no rate limits)
+    const thumb = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+    await page.context().route(/^https:\/\/(i\.ytimg\.com|www\.dailymotion\.com\/thumbnail)\//, (route) => route.fulfill({ status: 200, contentType: "image/png", body: thumb }));
     await login(page);
     const rec = await api("/api/collections/pages/records", {
         method: "POST",
