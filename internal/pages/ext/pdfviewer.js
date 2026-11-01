@@ -27,7 +27,8 @@ const isPDF = (name) => /\.pdf$/i.test(name || "");
 
 /**
  * Defines the component type. ctx: { pageId, viewAs(), collection(comp),
- * pdfAssets(), uploadPDF(files), assetURL(name), documentTemplates() }.
+ * pdfAssets(), uploadPDF(files), assetURL(name), documentTemplates(),
+ * libraryPDFs(), loadLibraryPDFs() }.
  */
 export function definePDFType(ed, ctx) {
     defineFileTrait(ed, ctx);
@@ -182,7 +183,7 @@ function clearSource(comp) {
         drop.push("data-pb-pdf-document");
     }
     const src = a["data-pb-pdf-src"] || "";
-    if (kind == "field" || kind == "document" || (kind == "file" && !src.startsWith("/p/_assets/"))) {
+    if (kind == "field" || kind == "document" || (kind == "file" && !src.startsWith("/p/_assets/") && !src.startsWith("/media/"))) {
         drop.push("data-pb-pdf-src");
     }
     const present = drop.filter((k) => k in a);
@@ -258,19 +259,23 @@ async function templateOptions(comp, ctx) {
         : [{ id: "", label: "- No templates: make one in Documents -" }];
 }
 
-// "File": the PDFs uploaded to the page, and an upload button
+// "File": the PDFs uploaded to the page and those of the Assets library, an
+// upload button, and the library's picker (when the Assets module is there)
 function defineFileTrait(ed, ctx) {
     ed.Traits.addType("gpp-pdf-file", {
         createInput({ component }) {
             const el = document.createElement("div");
             el.className = "gpp-pdf-file";
             el.innerHTML =
-                `<select aria-label="Uploaded PDF"></select>` +
+                `<select aria-label="PDF file"></select>` +
+                `<div class="gpp-pdf-actions">` +
                 `<label class="gpp-pdf-upload"><input type="file" accept="application/pdf,.pdf" hidden><i class="ri-upload-2-line" aria-hidden="true"></i><span>Upload a PDF</span></label>` +
+                (globalThis.gpMedia ? `<button type="button" class="gpp-pdf-upload gpp-pdf-library"><i class="ri-gallery-line" aria-hidden="true"></i><span>From the Assets</span></button>` : "") +
+                `</div>` +
                 `<p class="gpp-pdf-hint" hidden></p>`;
             const sel = el.querySelector("select");
             const hint = el.querySelector(".gpp-pdf-hint");
-            const set = (name) => (name ? component.addAttributes({ "data-pb-pdf-src": ctx.assetURL(name) }) : component.removeAttributes("data-pb-pdf-src"));
+            const set = (src) => (src ? component.addAttributes({ "data-pb-pdf-src": src }) : component.removeAttributes("data-pb-pdf-src"));
             sel.addEventListener("change", () => set(sel.value));
             el.querySelector("input").addEventListener("change", async (e) => {
                 const files = [...e.target.files].filter((f) => f.type == "application/pdf" || isPDF(f.name));
@@ -283,27 +288,52 @@ function defineFileTrait(ed, ctx) {
                 const added = await ctx.uploadPDF(files);
                 hint.hidden = true;
                 if (added[0]) {
-                    set(added[0]);
+                    set(ctx.assetURL(added[0]));
                 }
                 this.onUpdate({ elInput: el, component });
             });
+            el.querySelector(".gpp-pdf-library")?.addEventListener("click", async () => {
+                const [a] = await globalThis.gpMedia.pick({ kind: "pdf" });
+                if (a) {
+                    await ctx.loadLibraryPDFs();
+                    set(a.url);
+                    this.onUpdate({ elInput: el, component });
+                }
+            });
+            if (globalThis.gpMedia) {
+                ctx.loadLibraryPDFs().then(() => this.onUpdate({ elInput: el, component }));
+            }
             return el;
         },
         onUpdate({ elInput, component }) {
             const src = component.getAttributes()["data-pb-pdf-src"] || "";
-            const names = ctx.pdfAssets();
             const sel = elInput.querySelector("select");
-            const current = names.find((n) => ctx.assetURL(n) == src) || "";
+            const page = ctx.pdfAssets().map((n) => ({ value: ctx.assetURL(n), label: n.replace(/_[a-z0-9]{10}(\.pdf)$/i, "$1") }));
+            const library = ctx.libraryPDFs().map((a) => ({ value: a.url, label: a.name }));
             sel.innerHTML = "";
-            const add = (value, label) => {
+            const add = (parent, value, label) => {
                 const o = document.createElement("option");
                 o.value = value;
                 o.textContent = label;
-                sel.append(o);
+                parent.append(o);
             };
-            add("", names.length ? "- Select a PDF -" : "- No PDF uploaded yet -");
-            names.forEach((n) => add(n, n.replace(/_[a-z0-9]{10}(\.pdf)$/i, "$1")));
-            sel.value = current;
+            add(sel, "", page.length || library.length ? "- Select a PDF -" : "- No PDF uploaded yet -");
+            const group = (label, list) => {
+                if (!list.length) {
+                    return;
+                }
+                const g = document.createElement("optgroup");
+                g.label = label;
+                list.forEach((o) => add(g, o.value, o.label));
+                sel.append(g);
+            };
+            group("Uploaded to the page", page);
+            group("Assets library", library);
+            // a library file not listed yet (just chosen): kept
+            if (src && ![...page, ...library].some((o) => o.value == src) && /^\/(p\/_assets|media)\//.test(src)) {
+                add(sel, src, src.split("/").pop());
+            }
+            sel.value = src;
         },
     });
 }

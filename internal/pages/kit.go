@@ -270,6 +270,8 @@ var staticFiles = func() map[string]staticFile {
 	files[uiCSS] = staticFile{"ext/ui/gp-ui.css", "text/css; charset=utf-8", false}
 	files[pdfJS] = staticFile{"ext/ui/gp-pdf.js", "text/javascript; charset=utf-8", false}
 	files[pdfCSS] = staticFile{"ext/ui/gp-pdf.css", "text/css; charset=utf-8", false}
+	files[videoJS] = staticFile{"ext/ui/gp-video.js", "text/javascript; charset=utf-8", false}
+	files[videoCSS] = staticFile{"ext/ui/gp-video.css", "text/css; charset=utf-8", false}
 	return files
 }()
 
@@ -279,6 +281,9 @@ var uiJS, uiCSS = versioned("ext/ui/gp-ui.js", "gp-ui-%s.js"), versioned("ext/ui
 
 // pdfJS and pdfCSS are the script and styles of the PDF viewers.
 var pdfJS, pdfCSS = versioned("ext/ui/gp-pdf.js", "gp-pdf-%s.js"), versioned("ext/ui/gp-pdf.css", "gp-pdf-%s.css")
+
+// videoJS and videoCSS are the script (players loaded on click) and styles of the videos.
+var videoJS, videoCSS = versioned("ext/ui/gp-video.js", "gp-video-%s.js"), versioned("ext/ui/gp-video.css", "gp-video-%s.css")
 
 func versioned(path, pattern string) string {
 	data, _ := extFS.ReadFile(path)

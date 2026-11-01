@@ -21,6 +21,7 @@ import (
 	"github.com/Namarusa/PocketbasePlus/internal/flows"
 	"github.com/Namarusa/PocketbasePlus/internal/forms"
 	"github.com/Namarusa/PocketbasePlus/internal/mail"
+	"github.com/Namarusa/PocketbasePlus/internal/media"
 	"github.com/Namarusa/PocketbasePlus/internal/pages"
 	"github.com/Namarusa/PocketbasePlus/internal/rbac"
 	"github.com/Namarusa/PocketbasePlus/internal/records"
@@ -83,6 +84,10 @@ func main() {
 	// optional PDF documents (Documents menu, "Generate document" step): remove
 	// this line to remove the feature (run "pocketbaseplus documents uninstall" first)
 	documents.Register(app)
+
+	// optional library of files (Assets menu, /media/{id}/{name}): remove this
+	// line to remove the feature (run "pocketbaseplus media uninstall" first)
+	media.Register(app)
 
 	if slices.Contains(os.Args[1:], "serve") {
 		if err := deploy.CheckDataDir(app.DataDir()); err != nil {

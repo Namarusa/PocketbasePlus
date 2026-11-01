@@ -436,7 +436,7 @@ export function pageEditor(route) {
             return "Table · " + b.items.replace(/[{}]/g, "").trim();
         }
         if (b.type == "image") {
-            return "Image · " + (b.asset || (b.field ? "record." + b.field : b.url ? b.url : "none"));
+            return "Image · " + (b.asset || (b.field ? "record." + b.field : b.url ? (/^\/media\//.test(b.url) ? "Assets · " + decodeURIComponent(b.url.split("/").pop()) : b.url) : "none"));
         }
         if (b.type == "code") {
             const kind = codeKinds.find((k) => k.value == (b.code || "qr"))?.label || "Code";
@@ -1023,19 +1023,47 @@ export function pageEditor(route) {
                 break;
             case "image": {
                 const fileFields = () => (data.all.find((c) => c.name == data.form.collection)?.fields || []).filter((f) => f.type == "file").map((f) => f.name);
-                const source = store({ v: b.field ? "field" : b.url ? "url" : "asset" });
+                // the Assets library (internal/media), when it's there: its images by their address
+                const isLibrary = (u) => /^\/media\//.test(u || "");
+                const source = store({ v: b.field ? "field" : isLibrary(b.url) ? "library" : b.url ? "url" : "asset" });
+                const pickLibrary = async () => {
+                    const [a] = await globalThis.gpMedia.pick({ kind: "image" });
+                    if (a) {
+                        b.url = a.url;
+                        if (!b.width && a.width) {
+                            b.width = Math.min(Math.round((a.width * 25.4) / 96), 120); // its size at 96 dpi
+                        }
+                    }
+                };
                 const setSource = (v) => {
                     source.v = v;
                     b.asset = v == "asset" ? b.asset : "";
                     b.field = v == "field" ? b.field || fileFields()[0] || "" : "";
-                    b.url = v == "url" ? b.url : "";
+                    b.url = v == "url" ? (isLibrary(b.url) ? "" : b.url) : v == "library" ? (isLibrary(b.url) ? b.url : "") : "";
+                    if (v == "library" && !b.url) {
+                        pickLibrary();
+                    }
                 };
+                const sources = [["asset", "", "Uploaded"], ...(globalThis.gpMedia ? [["library", "", "Assets"]] : []), ["field", "", "Record file"], ["url", "", "Address"]];
                 out.push(
                     labelled(
                         "Image",
-                        segmented({ get v() { return source.v; }, set v(x) { setSource(x); } }, "v", [["asset", "", "Uploaded"], ["field", "", "Record file"], ["url", "", "Address"]], "src" + b.id),
+                        segmented({ get v() { return source.v; }, set v(x) { setSource(x); } }, "v", sources, "src" + b.id),
                     ),
                     () => {
+                        if (source.v == "library") {
+                            return t.div(
+                                { rid: "lib" + b.url, className: "gp-doc-library m-b-sm" },
+                                b.url
+                                    ? t.img({ src: b.url + (b.url.includes("?") ? "" : "?w=320"), alt: "", className: "gp-doc-library-img" })
+                                    : t.div({ className: "txt-hint txt-sm" }, "No image chosen."),
+                                t.button(
+                                    { type: "button", className: "btn sm secondary", onclick: pickLibrary },
+                                    t.i({ className: "ri-gallery-line", ariaHidden: true }),
+                                    t.span({ className: "txt" }, b.url ? "Change" : "Choose an image"),
+                                ),
+                            );
+                        }
                         if (source.v == "field") {
                             return t.div(
                                 { rid: "field" },

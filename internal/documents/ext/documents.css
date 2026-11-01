@@ -735,3 +735,17 @@
         opacity: 1;
     }
 }
+
+/* an image of the Assets library */
+.gp-doc-library {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.gp-doc-library-img {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+}

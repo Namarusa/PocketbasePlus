@@ -617,6 +617,37 @@ html[data-color-scheme="dark"] .gpp-viewas-banner {
 .gpp-pdf-upload:hover {
     background: rgba(255, 255, 255, 0.06);
 }
+.gpp-pdf-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.gpp-pdf-actions .gpp-pdf-upload {
+    flex: 1 1 auto;
+}
+button.gpp-pdf-upload {
+    background: none;
+    color: inherit;
+    font: inherit;
+}
+
+/* the image chooser: the Assets library's button (addLibraryAssets) */
+.gpp-am-library {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 10px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.gpp-am-library:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
 .gpp-pdf-hint {
     margin: 0;
     font-size: 0.9em;
@@ -840,7 +871,8 @@ html[data-color-scheme="dark"] .gpp-viewas-banner {
 .gpp-search-fields label small {
     opacity: 0.6;
 }
-.gjs-trt-trait .gpp-search-fields input[type="checkbox"] {
+.gjs-trt-trait .gpp-search-fields input[type="checkbox"],
+.gjs-trt-trait .gpp-image-link input[type="checkbox"] {
     appearance: auto;
     display: inline-block;
     flex: 0 0 auto;
@@ -981,4 +1013,205 @@ html[data-color-scheme="dark"] .gpp-viewas-banner {
     .gpp-rec-value {
         grid-column: 1 / -1;
     }
+}
+
+/* style panel (style.js): free values with buttons for the usual ones */
+.gpp-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+}
+.gpp-presets input {
+    width: 100%;
+    min-width: 0;
+    padding: 4px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.2);
+    color: inherit;
+    font: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+}
+.gpp-presets input:focus {
+    outline: none;
+    border-color: var(--gjs-quaternary-color);
+}
+.gpp-presets-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.gpp-presets-chips button {
+    padding: 2px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 11px;
+    line-height: 16px;
+    cursor: pointer;
+}
+.gpp-presets-chips button:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+.gpp-presets-chips button.active {
+    border-color: var(--gjs-quaternary-color);
+    color: var(--gjs-quaternary-color);
+}
+/* the icon buttons of the radio properties */
+.gpp-editor .gjs-radio-item-label[class*="ri-"] {
+    font-size: 15px;
+    line-height: 18px;
+    text-align: center;
+}
+.gpp-editor .gjs-radio-item-label {
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* the image settings (images.js) */
+.gpp-image {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+.gpp-image-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.gpp-image-thumb {
+    width: 56px;
+    height: 42px;
+    flex: none;
+    object-fit: cover;
+    border-radius: 4px;
+    background: repeating-conic-gradient(#3a3c41 0 25%, #2f3135 0 50%) 0 0 / 12px 12px;
+}
+.gpp-image-choose {
+    display: inline-flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.gpp-image-choose:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+.gpp-image-label {
+    font-size: 11px;
+    opacity: 0.7;
+}
+.gpp-image [hidden] {
+    display: none !important;
+}
+.gpp-image-url,
+.gpp-image-href {
+    width: 100%;
+    min-width: 0;
+}
+.gpp-image-note:empty {
+    display: none;
+}
+.gpp-image-link {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+}
+.gpp-image-link .gpp-check {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    font-size: 11px;
+    text-align: left;
+}
+
+/* custom CSS of the page */
+.gpp-css-input {
+    width: 100%;
+    min-height: 360px;
+    resize: vertical;
+    font-family: var(--monospaceFontFamily, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 13px;
+    line-height: 1.5;
+    tab-size: 2;
+    white-space: pre;
+}
+
+/* the Video settings (video.js) */
+.gpp-video-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+.gpp-video-settings input[type="text"],
+.gpp-video-settings select {
+    width: 100%;
+    min-width: 0;
+}
+.gpp-video-settings [hidden] {
+    display: none !important;
+}
+.gpp-video-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.gpp-video-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+.gpp-video-hosted,
+.gpp-video-checks {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.gpp-video-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.gpp-video-row input {
+    flex: 1;
+}
+.gpp-video-settings .gpp-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+}
+.gpp-video-found.gpp-warn {
+    color: #f59e0b;
+}
+.gjs-trt-trait .gpp-video-settings input[type="checkbox"] {
+    appearance: auto;
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    padding: 0;
+    accent-color: #3b82f6;
 }

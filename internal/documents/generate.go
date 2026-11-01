@@ -17,6 +17,7 @@ import (
 	"github.com/Namarusa/PocketbasePlus/internal/formula"
 	"github.com/Namarusa/PocketbasePlus/internal/httpcall"
 	"github.com/Namarusa/PocketbasePlus/internal/labels"
+	"github.com/Namarusa/PocketbasePlus/internal/medialib"
 )
 
 const (
@@ -396,6 +397,11 @@ func Bytes(app core.App, id string) ([]byte, string, error) {
 // (/api/files/…, read from the storage) or an http(s) address, downloaded
 // with the checks of the flows' requests (no private addresses).
 func loadImageURL(ctx context.Context, app core.App, src string) ([]byte, error) {
+	// a file of the Assets library: read from the storage
+	if id, ok := medialib.ID(app, src); ok {
+		raw, _, err := medialib.Read(app, id, maxAssetBytes)
+		return raw, err
+	}
 	path := src
 	if base := strings.TrimRight(app.Settings().Meta.AppURL, "/"); base != "" && strings.HasPrefix(path, base+"/") {
 		path = strings.TrimPrefix(path, base)

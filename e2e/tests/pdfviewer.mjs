@@ -225,7 +225,7 @@ export default async function ({ page, shot }) {
     for (const l of ["PDF", "File", "Toolbar", "Buttons", "Page thumbnails", "Pages", "Zoom", "Height"]) {
         assert(labels.some((x) => x.trim() == l), `the setting ${l} is missing: ${labels}`);
     }
-    equal(await page.locator(".gpp-pdf-file select").inputValue(), guide.src.split("/").pop(), "the uploaded PDF chosen");
+    equal(await page.locator(".gpp-pdf-file select").inputValue(), guide.src, "the uploaded PDF chosen");
     // no toolbar: the canvas shows it at once
     await shot("builder-settings");
     await page.locator(".gjs-trt-trait", { hasText: "Toolbar" }).locator("select").selectOption("none");

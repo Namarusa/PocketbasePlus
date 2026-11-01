@@ -73,20 +73,22 @@ type renderer struct {
 	preview bool // superuser preview: binding errors are shown in the page
 	budget  int
 
-	visitor    visitor
-	info       *core.RequestInfo // the visitor as PocketBase sees a request of theirs (API rules)
-	path       string            // of the page (the actions come back to it)
-	flash      *session.Flash
-	flashShown bool
-	widgets    bool // charts or calendars: the pages script and styles are loaded
-	pdf        bool // PDF viewers: their script and styles, and the CSP lets them read the files
-	charts     int
-	related    map[relatedKey]*core.Record // records reached through relations (nil: not shown)
-	formulas   map[string]*template.Template
-	lists      *listState // pagination and search (paging.go)
-	pagerCSS   bool
-	filterCSS  bool
-	errorInfo  map[string]any // error pages: the error shown ({{error.x}})
+	visitor     visitor
+	info        *core.RequestInfo // the visitor as PocketBase sees a request of theirs (API rules)
+	path        string            // of the page (the actions come back to it)
+	flash       *session.Flash
+	flashShown  bool
+	widgets     bool // charts or calendars: the pages script and styles are loaded
+	pdf         bool // PDF viewers: their script and styles, and the CSP lets them read the files
+	videoCSS    bool // videos (video.go): their styles
+	videoScript bool // videos loaded on click: the script
+	charts      int
+	related     map[relatedKey]*core.Record // records reached through relations (nil: not shown)
+	formulas    map[string]*template.Template
+	lists       *listState // pagination and search (paging.go)
+	pagerCSS    bool
+	filterCSS   bool
+	errorInfo   map[string]any // error pages: the error shown ({{error.x}})
 }
 
 // pageView is what's needed to render a page.
@@ -190,6 +192,13 @@ func render(ctx context.Context, app core.App, p pageView, query url.Values, pre
 		b.WriteString(`<script src="/p/_static/` + pdfJS + `" defer></script>` + "\n")
 		script = true
 	}
+	if r.videoCSS {
+		b.WriteString(`<link rel="stylesheet" href="/p/_static/` + videoCSS + `">` + "\n")
+	}
+	if r.videoScript {
+		b.WriteString(`<script src="/p/_static/` + videoJS + `" defer></script>` + "\n")
+		script = true
+	}
 	// "</" can't close the style element early
 	b.WriteString("<style>" + strings.ReplaceAll(p.CSS, "</", `<\/`) + "</style>\n</head>\n")
 	if err := xhtml.Render(&b, body); err != nil {
@@ -253,6 +262,11 @@ func (r *renderer) walk(n *xhtml.Node, s scope, depth int) {
 		}
 		if hasAttr(n, attrCalendar) {
 			r.calendar(n)
+			removeBindingAttrs(n)
+			return
+		}
+		if hasAttr(n, attrVideo) {
+			r.video(n, s)
 			removeBindingAttrs(n)
 			return
 		}

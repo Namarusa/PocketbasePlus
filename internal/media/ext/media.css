@@ -1,0 +1,576 @@
+/* Assets module: the library page, the details window and the picker. */
+
+.gpm-page .page-content {
+    position: relative;
+}
+
+/* sidebar: folders (drop targets) */
+.gpm-nav-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    border-radius: var(--borderRadius);
+}
+.gpm-nav-row.drop {
+    box-shadow: inset 0 0 0 2px var(--primaryColor);
+    background: color-mix(in srgb, var(--primaryColor) 10%, transparent);
+}
+.gpm-nav-item {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.gpm-nav-item .txt {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gpm-count {
+    margin-left: auto;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.gpm-nav-edit {
+    position: absolute;
+    right: 2px;
+    opacity: 0;
+}
+.gpm-nav-row:hover .gpm-nav-edit,
+.gpm-nav-edit:focus-visible {
+    opacity: 1;
+}
+.gpm-nav-row:hover .gpm-count {
+    visibility: hidden;
+}
+.gpm-new-folder {
+    color: var(--surfaceTxtHintColor);
+}
+
+/* toolbar */
+.gpm-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-bottom: var(--smSpacing);
+}
+.gpm-search {
+    flex: 1 1 200px;
+    max-width: 320px;
+}
+.gpm-kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.gpm-kind {
+    cursor: pointer;
+    border: 1px solid transparent;
+    gap: 4px;
+}
+.gpm-kind.active {
+    background: var(--primaryColor);
+    color: var(--primaryTxtColor, #fff);
+}
+.gpm-toolbar-end {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+.gpm-sort {
+    width: 160px;
+}
+.gpm-views {
+    display: flex;
+    gap: 2px;
+}
+.gpm-folder-select {
+    display: none;
+    width: 180px;
+}
+
+/* selection */
+.gpm-selection {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: var(--smSpacing);
+    border-radius: var(--lgBorderRadius);
+    background: var(--surfaceColor);
+    box-shadow: var(--boxShadow);
+    border: 1px solid var(--primaryColor);
+}
+
+/* grid */
+.gpm-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+}
+.gpm-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--lgBorderRadius);
+    background: var(--surfaceColor);
+    cursor: pointer;
+    transition: border-color var(--animationSpeed), box-shadow var(--animationSpeed);
+}
+.gpm-card:hover {
+    border-color: var(--surfaceAlt3Color, var(--surfaceAlt2Color));
+    box-shadow: var(--boxShadow);
+}
+.gpm-card:focus-visible {
+    outline: 2px solid var(--primaryColor);
+    outline-offset: 2px;
+}
+.gpm-card.selected {
+    border-color: var(--primaryColor);
+    box-shadow: 0 0 0 1px var(--primaryColor);
+    background: color-mix(in srgb, var(--primaryColor) 6%, var(--surfaceColor));
+}
+.gpm-check {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 2;
+    display: flex;
+    padding: 4px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    box-shadow: var(--boxShadow);
+    opacity: 0;
+    cursor: pointer;
+}
+.gpm-check input {
+    margin: 0;
+    cursor: pointer;
+}
+.gpm-card:hover .gpm-check,
+.gpm-card.selected .gpm-check,
+.gpm-check:focus-within,
+.gpm-grid:has(.gpm-card.selected) .gpm-check {
+    opacity: 1;
+}
+@media (hover: none) {
+    .gpm-check {
+        opacity: 1;
+    }
+}
+.gpm-thumb {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: var(--borderRadius);
+    /* a checkerboard behind transparent images */
+    background-color: var(--surfaceAlt1Color);
+    background-image: linear-gradient(45deg, var(--surfaceAlt2Color) 25%, transparent 25%), linear-gradient(-45deg, var(--surfaceAlt2Color) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--surfaceAlt2Color) 75%), linear-gradient(-45deg, transparent 75%, var(--surfaceAlt2Color) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+.gpm-thumb:not(.gpm-thumb-image) {
+    background-image: none;
+}
+.gpm-thumb img,
+.gpm-thumb video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+.gpm-thumb-video video {
+    object-fit: cover;
+    background: #000;
+}
+.gpm-play {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 20px;
+}
+.gpm-icon {
+    font-size: 42px;
+    color: var(--surfaceTxtHintColor);
+}
+.gpm-thumb-pdf .gpm-icon {
+    color: var(--dangerColor);
+}
+.gpm-doc-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    color: var(--surfaceTxtHintColor);
+}
+.gpm-font {
+    font-size: 44px;
+    line-height: 1.1;
+    color: var(--surfaceTxtColor);
+    text-align: center;
+    overflow: hidden;
+}
+.gpm-card-name {
+    margin-top: 8px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gpm-card-meta {
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* list */
+.gpm-table td {
+    vertical-align: middle;
+}
+.gpm-row.selected td {
+    background: color-mix(in srgb, var(--primaryColor) 7%, transparent);
+}
+.gpm-row-check {
+    width: 36px;
+}
+.gpm-row-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 360px;
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.gpm-row-name:hover .txt-bold {
+    text-decoration: underline;
+}
+.gpm-row-thumb {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    overflow: hidden;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+}
+.gpm-row-thumb img,
+.gpm-row-thumb video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.gpm-row-thumb .gpm-icon {
+    font-size: 20px;
+}
+.gpm-row-thumb .gpm-font {
+    font-size: 18px;
+}
+.gpm-row-thumb .gpm-doc-icon span {
+    display: none;
+}
+
+/* empty and drop */
+.gpm-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 56px 16px;
+    text-align: center;
+    border: 2px dashed var(--surfaceAlt2Color);
+    border-radius: var(--lgBorderRadius);
+}
+.gpm-empty > i {
+    font-size: 40px;
+    color: var(--surfaceTxtHintColor);
+}
+.gpm-empty p {
+    margin: 0;
+    max-width: 440px;
+}
+.gpm-dropzone {
+    position: absolute;
+    inset: 8px;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 3px dashed var(--primaryColor);
+    border-radius: var(--lgBorderRadius);
+    background: color-mix(in srgb, var(--surfaceColor) 85%, transparent);
+    color: var(--primaryColor);
+    font-weight: 600;
+    font-size: 1.1em;
+    pointer-events: none;
+}
+.gpm-dropzone i {
+    font-size: 48px;
+}
+
+/* uploads */
+.gpm-uploads {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1000;
+    width: min(340px, calc(100vw - 32px));
+    max-height: 50vh;
+    overflow: auto;
+    padding: 10px 12px;
+    border-radius: var(--lgBorderRadius);
+    background: var(--surfaceColor);
+    box-shadow: var(--boxShadow);
+    border: 1px solid var(--surfaceAlt2Color);
+}
+.gpm-uploads-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+.gpm-upload {
+    padding: 4px 0;
+}
+.gpm-upload-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--smFontSize);
+}
+.gpm-upload-name span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gpm-upload.done .gpm-upload-name i {
+    color: var(--successColor);
+}
+.gpm-upload.failed .gpm-upload-name i,
+.gpm-upload-error {
+    color: var(--dangerColor);
+    font-size: var(--smFontSize);
+}
+.gpm-progress {
+    height: 4px;
+    margin-top: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: var(--surfaceAlt2Color);
+}
+.gpm-progress > div {
+    height: 100%;
+    background: var(--primaryColor);
+    transition: width 0.2s;
+}
+
+/* details window */
+.gpm-details-title {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gpm-details-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 24px;
+}
+.gpm-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    max-height: 420px;
+    overflow: hidden;
+    border-radius: var(--lgBorderRadius);
+    background: var(--surfaceAlt1Color);
+}
+.gpm-stage img,
+.gpm-stage video {
+    max-width: 100%;
+    max-height: 420px;
+    object-fit: contain;
+}
+.gpm-stage-pdf iframe {
+    width: 100%;
+    height: 420px;
+    border: 0;
+}
+.gpm-stage .gpm-font {
+    padding: 16px;
+    font-size: 18px;
+    text-align: left;
+}
+.gpm-font-big {
+    font-size: 54px;
+}
+.gpm-preview-audio {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 16px;
+}
+.gpm-preview-audio i {
+    font-size: 54px;
+    color: var(--surfaceTxtHintColor);
+}
+.gpm-preview-audio audio {
+    width: 100%;
+}
+.gpm-stage .gpm-doc-icon .gpm-icon {
+    font-size: 64px;
+}
+.gpm-info {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    margin: 12px 0 0;
+    font-size: var(--smFontSize);
+}
+.gpm-info dt {
+    color: var(--surfaceTxtHintColor);
+}
+.gpm-info dd {
+    margin: 0;
+    word-break: break-word;
+}
+.gpm-link {
+    display: flex;
+    gap: 6px;
+}
+.gpm-link input {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--monospaceFontFamily);
+    font-size: var(--smFontSize);
+}
+.gpm-sizes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.gpm-size {
+    cursor: pointer;
+}
+.gpm-usages {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 4px;
+}
+.gpm-folder-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: var(--smSpacing);
+}
+.gpm-folder-chip {
+    cursor: pointer;
+    gap: 4px;
+}
+.gpm-folder-chip.active {
+    background: var(--primaryColor);
+    color: var(--primaryTxtColor, #fff);
+}
+.gpm-details-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* picker */
+.gpm-picker .modal-content {
+    position: relative;
+    min-height: 360px;
+}
+.gpm-picker-toolbar .gpm-search {
+    max-width: none;
+}
+.gpm-picker-folder {
+    width: 200px;
+}
+.gpm-picker-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+}
+
+/* phones and narrow screens */
+@media (max-width: 980px) {
+    .gpm-sidebar {
+        display: none;
+    }
+    .gpm-folder-select {
+        display: block;
+    }
+}
+@media (max-width: 700px) {
+    .gpm-details-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .gpm-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .gpm-toolbar-end {
+        margin-left: 0;
+        flex: 1 1 100%;
+    }
+    .gpm-sort {
+        flex: 1 1 140px;
+    }
+    .gpm-search {
+        max-width: none;
+        flex-basis: 100%;
+    }
+    .gpm-folder-select {
+        flex: 1 1 140px;
+    }
+    .gpm-picker-folder {
+        width: auto;
+        flex: 1 1 140px;
+    }
+    .gpm-font {
+        font-size: 34px;
+    }
+}

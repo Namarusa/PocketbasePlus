@@ -211,6 +211,29 @@ export function pageTemplateEditor(route) {
         data.form.html += text;
     }
 
+    // an image of the Assets library (internal/media), at the caret: its
+    // address on the app's URL (the email clients load it from there)
+    async function insertImage() {
+        const sel = window.getSelection();
+        const range = htmlEditorContent && sel?.rangeCount && htmlEditorContent.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
+        const [a] = await globalThis.gpMedia.pick({ kind: "image" });
+        if (!a) {
+            return;
+        }
+        const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+        // a large image is sent at most 1200 px wide (the width shown: at most 600 px)
+        const src = a.width > 1200 && /^image\/(png|jpeg|gif|webp)$/.test(a.mime) ? a.url + "?w=1280" : a.url;
+        const width = a.width ? Math.min(a.width, 600) : 0;
+        const tag = `<img src="{{.app.url}}${src}" alt="${esc(a.alt || "")}"${width ? ` width="${width}"` : ""} style="display:block;max-width:100%;height:auto;border:0">`;
+        if (range) {
+            htmlEditorContent.focus();
+            const s = window.getSelection();
+            s.removeAllRanges();
+            s.addRange(range);
+        }
+        insert(tag);
+    }
+
     function chip(label, text) {
         return t.button(
             {
@@ -334,6 +357,17 @@ export function pageTemplateEditor(route) {
                         },
                     }),
                 ),
+                globalThis.gpMedia
+                    ? t.div(
+                          { className: "flex gap-5 m-b-sm gp-email-insert" },
+                          t.button(
+                              { type: "button", className: "btn sm secondary", onmousedown: (e) => e.preventDefault(), onclick: insertImage },
+                              t.i({ className: "ri-image-add-line", ariaHidden: true }),
+                              t.span({ className: "txt" }, "Insert an image"),
+                          ),
+                          t.span({ className: "txt-hint txt-sm" }, "From the Assets library. It's loaded from the Application URL of the settings."),
+                      )
+                    : null,
                 t.details(
                     { className: "gp-details m-b-sm", open: () => !!data.form.text },
                     t.summary(null, "Plain text body ", t.span({ className: "txt-hint" }, "(optional, improves deliverability)")),

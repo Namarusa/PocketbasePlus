@@ -87,12 +87,17 @@ Back up `pb_data` first (Settings → Backups, or a copy of the folder while the
   barcodes) and flows generate them, attach them to emails or answer webhooks with them; pages get PDF viewers and
   Download PDF buttons. The migrations only add: the `document_templates` and `documents` collections, the attachments
   of the queued emails, and PDFs in the page files. `documents uninstall --yes` removes the module. On Coolify, set `POCKETBASEPLUS_VERSION` to `0.6`.
+- **0.7.0**: the [Assets](#assets) menu, a library of files (images, videos, PDFs, fonts) shared by the pages,
+  documents and emails; the page builder gets grid layouts, more styles, Large screen and Small laptop views, custom
+  CSS, image settings and a new Video block (YouTube, Vimeo, Loom… or a file, loaded on click). The migration only
+  adds the `media_assets` collection; existing pages and their videos are unchanged. `media uninstall --yes` removes
+  the Assets module. On Coolify, set `POCKETBASEPLUS_VERSION` to `0.7`.
 
 ## Docker
 
 One image, `ghcr.io/namarusa/pocketbaseplus`, for **linux/amd64**, **linux/arm64** and **linux/arm/v7**: Docker picks the
 right one on Linux servers, Docker Desktop (Windows, macOS Intel and Apple Silicon), Synology, QNAP, Unraid, TrueNAS
-SCALE, ZimaOS / CasaOS, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, the version (`0.6.0`) and its minor line (`0.6`).
+SCALE, ZimaOS / CasaOS, Raspberry Pi (32 and 64-bit), Portainer, Coolify, CapRover or Kubernetes. Tags: `latest`, the version (`0.7.0`) and its minor line (`0.7`).
 
 ```sh
 docker run -d --name pocketbaseplus -p 8090:8090 \
@@ -124,7 +129,7 @@ the sources).
   `ENCRYPTION_KEY` (keep it safe), and Deploy. Coolify generates a domain; to use yours, change it in
   Domains with the container port (`https://app.example.com:8090`, visitors use `https://app.example.com`). The
   image's health check shows the app as *healthy*. Then set Settings → Application → *Application URL* to the domain and
-  *User IP proxy headers* to `X-Forwarded-For`. Redeploy pulls the latest `0.6.x` (the `POCKETBASEPLUS_VERSION` variable picks another line).
+  *User IP proxy headers* to `X-Forwarded-For`. Redeploy pulls the latest `0.7.x` (the `POCKETBASEPLUS_VERSION` variable picks another line).
 - **Commands**: `docker exec pocketbaseplus pocketbaseplus --dir /pb_data superuser upsert EMAIL PASS` (or
   `pages uninstall`, `migrate`...).
 
@@ -173,6 +178,8 @@ Everything else (SMTP, S3, backups, AI providers, OAuth2) is set in the dashboar
 - **Rich text of the records** shown on pages keeps formatting only (allow list): no forms, buttons, styles sheets,
   frames, media players, or positioning styles; user links get `rel="nofollow ugc"`.
 - **Draft pages**: their images are only served to the page builder and to their preview links.
+- **Assets**: the library takes no HTML or scripts, and serves its files sandboxed (`Content-Security-Policy:
+  sandbox`, `nosniff`); its files are public by their address, the list is for superusers.
 - **Files**: on Linux and macOS, the database, backups and uploads are only readable by the account running the
   server.
 
@@ -197,6 +204,9 @@ internal/pages/       optional Pages module, self-contained: its migration, page
 internal/pdfview/     PDF.js 4.10.38 (Apache-2.0, with its character maps and standard fonts: licences next to them),
                       shared by the PDF viewers of the pages and the Documents editor, and the signed links of the
                       documents shown in the pages
+internal/media/       optional Assets module: the library of files (/media/{id}/{name}), its migration and dashboard
+                      extension "pocketbaseplus-media"
+internal/medialib/    what the other modules know of the library (its addresses, reading a file)
 internal/offline/     offline deployment settings (POCKETBASEPLUS_OFFLINE, POCKETBASEPLUS_MAP_TILES)
 internal/deploy/      container settings from the environment (listen address, encryption key, first superuser) and the health command
 internal/formula/     the functions of the templates, flows and page formulas, with their catalog (/api/gp/functions)
@@ -485,6 +495,40 @@ the Docker image and on every platform, with no browser or service next to it.
 To remove the module: back up `pb_data`, run `./pocketbaseplus documents uninstall --yes` (deletes the templates and
 the generated documents), remove `documents.Register(app)` from `main.go` and delete `internal/documents/`. Flows
 with Generate document steps then fail with "the Documents module isn't installed".
+
+## Assets
+
+**Assets** (a menu of the dashboard; optional module, `internal/media`) is the library of files of the whole app:
+images, videos, audio, PDFs, fonts and documents (Word, Excel, CSV…), up to 100 MB each, uploaded once and used by
+the pages, documents and emails.
+
+- **Upload**: the *Upload* button, files dropped anywhere on the page (or onto a folder), or an image pasted
+  (Ctrl+V, e.g. a screenshot). HTML and scripts are refused.
+- **Folders**: *New folder*, drag files onto a folder, or select them and *Move*. Renaming a folder moves its files.
+- **Find**: search (name, description, folder), filter by kind, sort (newest, oldest, name, largest), grid or list.
+- **A file** (click it): a preview (images, videos, audio, PDFs, the letters of fonts), its name, a description
+  (alt text, used by the pages and emails), its folder, its type and size, **where it's used** (pages, document and
+  email templates, and the text, rich text, URL and JSON fields of your collections), *Replace file*, *Download*,
+  *Delete* (which warns when the file is used).
+- **Select** several files (their box, Shift for a range, Ctrl+A) to move or delete them (the Delete key works too).
+
+Each file has a public address that never changes: `/media/{id}/{name}`. Replacing the file keeps it (the pages and
+emails then show the new one), and so does renaming it (the name is only there to read well). Images also have
+smaller copies, made once: `?w=320` (or 160, 640, 960, 1280, 1920), for `srcset` and lighter emails. The files are
+served with a 5 minutes cache, sandboxed (an SVG opened alone can't run its scripts).
+
+Where the library is used:
+
+- **Pages**: the image chooser of the builder lists its images and has *Choose from the Assets library* (folders,
+  search, upload); the [PDF viewers](#pdf-viewers) list its PDFs (*From the Assets*).
+- **Documents**: the Image block has an *Assets* source.
+- **Emails**: *Insert an image* in the template editor writes `<img src="{{.app.url}}/media/…">`: set the
+  *Application URL* of the settings to the public address of the app, since the email clients load it from there.
+- **AI assistant**: it lists the files (`list_assets`) and uses their addresses in the pages it proposes.
+
+The files of the library are public: anyone with an address can open the file (the list itself is for superusers).
+To remove the module: back up `pb_data`, run `./pocketbaseplus media uninstall --yes` (deletes the library and its
+files), remove `media.Register(app)` from `main.go` and delete `internal/media/`. Their addresses then answer 404.
 
 ## Secrets
 
@@ -862,9 +906,24 @@ show your collections:
   the rules apply in order and the last matching value wins. Conditions see what the field bindings see (hidden
   fields are empty). **Visible to** still shows elements by role.
 - **Form**: embeds one of your [forms](#forms).
-- Plus sections, columns, headings, text, images (uploaded to the page), buttons, links, dividers and videos, with
-  the styles panel and desktop/tablet/phone views. The canvas shows sample records; **Preview** opens the saved page
-  with your data (drafts too, for an hour).
+- Plus sections, columns, headings, text, images (uploaded to the page or from the [Assets](#assets)), buttons,
+  links, dividers and videos. The canvas shows sample records; **Preview** opens the saved page with your data
+  (drafts too, for an hour).
+- **Styles panel**: flex and **grid** layouts (columns presets such as 3 equal or "auto cards", gaps, alignment),
+  the placement of an element in its parent (column and row span, grow, order), position (including sticky) and
+  layer, sizes (min/max, aspect ratio, overflow), image and video fit and focus point, text (case, decoration,
+  balanced wrapping), backgrounds, borders, filters and blur. The controls show only where they apply (grid settings
+  on a grid, span settings in a grid, fit on images).
+- **Breakpoints**: Large screen (1440px and wider), Desktop (every screen), Small laptop (≤1280px), Tablet (≤992px)
+  and Phone (≤480px); styles set in a view apply from that view. A view wider than the canvas is zoomed out to fit.
+- **Video**: paste a YouTube, Vimeo, Loom, Dailymotion, Wistia or Bunny Stream link, or choose a video file of the
+  Assets (a formula works too: `{{record.video}}`). It shows a poster (YouTube's thumbnail, or your image) and loads
+  the player only on click: the page stays fast and nothing is loaded from the video service before. Options: shape
+  (16:9, 4:3, 1:1, 9:16, 21:9), title, start time, muted autoplay, loop, hidden controls, or the player with the page.
+- **Images**: change the file (uploads or the Assets library) or its address, alt text, hover text, a link around
+  it (optionally in a new tab) and how it loads (lazy below the first screen, first for the main image).
+- **Custom CSS** (the CSS button of the toolbar): anything else (`:hover`, `@media`, `@keyframes`, classes), kept as written,
+  shown in the canvas and published after the builder's styles.
 
 Pages are published at `/{slug}` (single item pages at `/{slug}/{id}`), and one page can be the **home page**, served at
 `/` (its slug redirects there). They're rendered by the server: fast, indexed by search engines, no JavaScript needed.

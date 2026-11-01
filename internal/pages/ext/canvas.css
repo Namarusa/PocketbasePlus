@@ -222,3 +222,23 @@ dialog.dialog::before {
     color: #3b82f6;
     font: 13px sans-serif;
 }
+
+/* the Video block before its link (video.js) */
+.gpp-video-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+    color: #c9ccd6;
+    font: 14px/1.4 system-ui, sans-serif;
+    text-align: left;
+}
+.gpp-video-empty i {
+    font-size: 28px;
+}
+.gpp-video-bad {
+    color: #fca5a5;
+}

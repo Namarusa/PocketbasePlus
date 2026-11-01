@@ -14,6 +14,9 @@ import { clearDraft, historyModal, offerDraft, storeDraft } from "./history.js";
 import { applyConditions, defineConditions } from "./conditions.js";
 import { defineRecordsTraits, filterSentence, recordsModal } from "./records.js";
 import { applyDynamic, defineFormula, dynamicValues, formulaModal, formulaSample } from "./formula.js";
+import { customCSS, customCSSModal, defineStyles, deviceButtons, devices, pageCSS, sectors, setCustomCSS } from "./style.js";
+import { addImageTraits, defineImageTraits } from "./images.js";
+import { defineVideo } from "./video.js";
 import { accessLabel, addVisibleTrait, applyViewAs, defineMemberTypes, loadMembers, members, refreshMemberTraits, setMemberBlocks, viewerCanOpen, viewerOptions } from "./members.js";
 
 const base = app.pb.buildURL("/_/extensions/pocketbaseplus-pages/");
@@ -44,6 +47,62 @@ function loadGrapes() {
 const defaultCSS = "body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#222;line-height:1.5}";
 const assetURL = (pageId, name) => `/p/_assets/${pageId}/${encodeURIComponent(name)}`;
 const isPDF = (name) => /\.pdf$/i.test(name || "");
+
+const isLibrary = (src) => String(src || "").startsWith("/media/");
+
+/** The project of the page, without the images of the Assets library (listed again on each opening). */
+function projectData(ed) {
+    const p = ed.getProjectData();
+    p.assets = (p.assets || []).filter((a) => !isLibrary(typeof a == "string" ? a : a?.src));
+    p.gppCustomCSS = customCSS(ed); // the page's own CSS (style.js), as written
+    return p;
+}
+
+/**
+ * The images of the Assets library (internal/media) in the image chooser, and
+ * its own picker (folders, search, upload) from a button, when it's there.
+ */
+function addLibraryAssets(ed) {
+    if (!globalThis.gpMedia) {
+        return;
+    }
+    const am = ed.AssetManager;
+    ed.on("asset:open", async () => {
+        const header = ed.Modal.getContentEl()?.querySelector(".gjs-am-assets-header");
+        if (header && !header.querySelector(".gpp-am-library")) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "gpp-am-library";
+            btn.innerHTML = `<i class="ri-gallery-line" aria-hidden="true"></i><span>Choose from the Assets library</span>`;
+            btn.addEventListener("click", async () => {
+                // the chooser's own select (the image being edited), kept before its window closes
+                const select = am.__getBehaviour?.()?.select;
+                const target = ed.getSelected();
+                ed.Modal.close(); // the picker is a window of the dashboard
+                const [a] = await globalThis.gpMedia.pick({ kind: "image" });
+                if (!a) {
+                    return;
+                }
+                const added = am.add({ src: a.url, name: a.name });
+                const asset = Array.isArray(added) ? added[0] : added;
+                if (typeof select == "function" && asset) {
+                    select(asset, true);
+                } else if (target?.is?.("image")) {
+                    target.set({ src: a.url });
+                }
+                if (target?.is?.("image") && a.alt && !target.getAttributes().alt) {
+                    target.addAttributes({ alt: a.alt });
+                }
+                ed.Modal.close();
+            });
+            header.prepend(btn);
+        }
+        try {
+            const list = await globalThis.gpMedia.list({ kind: "image" });
+            am.add(list.slice(0, 300).map((a) => ({ src: a.url, name: a.name })));
+        } catch {}
+    });
+}
 const placeholderImage = "data:image/svg+xml," + encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><rect width="320" height="180" fill="#e9ecef"/><path d="M130 115l20-25 15 18 10-12 20 19z" fill="#adb5bd"/><circle cx="140" cy="72" r="9" fill="#adb5bd"/></svg>`,
 );
@@ -488,12 +547,16 @@ export function pageBuilder(route) {
     const widgetCtx = { pageId: id, byName: (name) => byName(name), collectionOptions: () => collectionOptions(), viewAs: () => data.viewAs };
     // the PDF viewers (pdfviewer.js)
     let documentTemplates = null;
+    let libraryPDFs = [];
     const pdfCtx = {
         ...widgetCtx,
         collection: (comp) => contextCollection(comp),
         pdfAssets: () => (data.page?.assets || []).filter(isPDF),
         uploadPDF: (files) => uploadAssets(files),
         assetURL: (name) => assetURL(id, name),
+        // the PDFs of the Assets library (internal/media), when it's there
+        libraryPDFs: () => libraryPDFs,
+        loadLibraryPDFs: async () => (libraryPDFs = globalThis.gpMedia ? await globalThis.gpMedia.list({ kind: "pdf" }).catch(() => []) : []),
         // the templates of the Documents module (none without it)
         documentTemplates: () =>
             (documentTemplates ||= app.pb
@@ -722,7 +785,8 @@ export function pageBuilder(route) {
         bm.add("button", { ...basic, label: "Button", media: icon("ri-checkbox-blank-line"), content: `<a href="#" style="${button}">Button</a>` });
         bm.add("link", { ...basic, label: "Link", media: icon("ri-link"), content: { type: "link", content: "Link", attributes: { href: "#" } } });
         bm.add("divider", { ...basic, label: "Divider", media: icon("ri-separator"), content: `<hr style="border:0;border-top:1px solid #ddd;margin:24px 0">` });
-        bm.add("video", { ...basic, label: "Video", media: icon("ri-video-line"), content: { type: "video", provider: "so", style: { width: "100%", height: "400px" } } }); // a file: YouTube/Vimeo in its settings
+        // YouTube, Vimeo, Loom… or a file: drawn by the server (video.js, internal/pages/video.go)
+        bm.add("video", { ...basic, label: "Video", media: icon("ri-video-line"), activate: true, content: { type: "pb-video", attributes: { "data-pb-video": "" } } });
 
         bm.add("pb-list", {
             ...dataCat,
@@ -1025,6 +1089,9 @@ export function pageBuilder(route) {
             // the component types before the content is parsed (else it's plain elements)
             plugins: [
                 (ed) => {
+                    defineStyles(ed);
+                    defineImageTraits(ed);
+                    defineVideo(ed);
                     defineKitTraits(ed);
                     defineKitPageTrait(ed);
                     defineTypes(ed);
@@ -1054,14 +1121,10 @@ export function pageBuilder(route) {
             // saved project, or the starter HTML of a new page
             ...(project ? { projectData: project } : { components: page.html || "", style: page.css || (page.kit ? "" : defaultCSS) }),
             selectorManager: { componentFirst: true },
-            canvas: { styles: [base + "canvas.css", base + "ui/gp-ui.css", base + "ui/gp-pdf.css"], scripts: [base + "ui/gp-ui.js", base + "ui/gp-pdf.js"] },
-            deviceManager: {
-                devices: [
-                    { id: "desktop", name: "Desktop", width: "" },
-                    { id: "tablet", name: "Tablet", width: "770px", widthMedia: "992px" },
-                    { id: "mobile", name: "Phone", width: "375px", widthMedia: "480px" },
-                ],
-            },
+            canvas: { styles: [base + "canvas.css", base + "ui/gp-ui.css", base + "ui/gp-pdf.css", base + "ui/gp-video.css"], scripts: [base + "ui/gp-ui.js", base + "ui/gp-pdf.js"] },
+            deviceManager: { devices },
+            showDevices: false, // the device buttons of the toolbar (not a second list over them)
+            styleManager: { sectors },
             assetManager: {
                 // the images (the PDFs go in the PDF viewers)
                 assets: (page.assets || []).filter((n) => !isPDF(n)).map((n) => assetURL(page.id, n)),
@@ -1085,6 +1148,7 @@ export function pageBuilder(route) {
                             { id: "preview", className: "ri-eye-line", command: "preview", context: "preview", attributes: { title: "Hide the panels" } },
                             { id: "undo", className: "ri-arrow-go-back-line", command: "core:undo", attributes: { title: "Undo" } },
                             { id: "redo", className: "ri-arrow-go-forward-line", command: "core:redo", attributes: { title: "Redo" } },
+                            { id: "custom-css", className: "ri-css3-line", command: (e) => customCSSModal(e, () => (data.dirty = true)), togglable: false, attributes: { title: "Custom CSS of the page" } },
                             { id: "export-template", className: "ri-code-s-slash-line", command: "export-template", attributes: { title: "View code" } },
                         ],
                     },
@@ -1099,16 +1163,14 @@ export function pageBuilder(route) {
                     },
                     {
                         id: "devices",
-                        buttons: [
-                            { id: "desktop", className: "ri-computer-line", command: (e) => e.setDevice("desktop"), active: true, togglable: false, attributes: { title: "Desktop" } },
-                            { id: "tablet", className: "ri-tablet-line", command: (e) => e.setDevice("tablet"), togglable: false, attributes: { title: "Tablet" } },
-                            { id: "mobile", className: "ri-smartphone-line", command: (e) => e.setDevice("mobile"), togglable: false, attributes: { title: "Phone" } },
-                        ],
+                        buttons: deviceButtons,
                     },
                 ],
             },
         });
         editor = ed;
+        setCustomCSS(ed, project?.gppCustomCSS);
+        addLibraryAssets(ed);
         defineBlocks(ed);
         setKitBlocks(ed, page.kit);
         setPartBlocks(ed, !page.isPart); // parts don't nest
@@ -1161,6 +1223,7 @@ export function pageBuilder(route) {
         ed.on("component:add", () => applyPartsCSS(ed));
         ed.on("component:selected", (comp) => {
             addVisibleTrait(comp);
+            addImageTraits(comp);
             refreshMemberTraits(comp);
             refreshTraits(comp);
             addPartTools(comp);
@@ -1210,7 +1273,9 @@ export function pageBuilder(route) {
         }
         if (v.project?.pages) {
             editor.loadProjectData(v.project);
+            setCustomCSS(editor, v.project.gppCustomCSS);
         } else {
+            setCustomCSS(editor, "");
             editor.setComponents(v.html || "");
             editor.setStyle(v.css || "");
         }
@@ -1306,8 +1371,8 @@ export function pageBuilder(route) {
                 access: p.isPart ? "public" : p.access,
                 roles: p.access == "roles" && !p.isPart ? p.roles : [],
                 html: editor.getHtml(),
-                css: editor.getCss(),
-                project: editor.getProjectData(),
+                css: pageCSS(editor),
+                project: projectData(editor),
             });
             data.page = { ...data.page, home: rec.home, updated: rec.updated };
             data.dirty = false;
@@ -1537,7 +1602,7 @@ export function pageBuilder(route) {
     };
     const keepDraft = () => {
         if (editor && data.dirty) {
-            storeDraft(id, editor.getProjectData());
+            storeDraft(id, projectData(editor));
         }
     };
     let draftTimer = null;

@@ -121,7 +121,7 @@ func TemplateData(app core.App, record *core.Record, records []*core.Record, rec
 		"recipient": map[string]any{"email": recipient},
 		"app": map[string]any{
 			"name": app.Settings().Meta.AppName,
-			"url":  app.Settings().Meta.AppURL,
+			"url":  strings.TrimRight(app.Settings().Meta.AppURL, "/"), // {{.app.url}}/media/…
 		},
 		"unsubscribe_url": UnsubscribeURL(app, recipient),
 	}
